@@ -37,7 +37,7 @@ Camera camera = {
   .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1))
 };
 // vec4 cameraPos(0, 0, -2, 1.0);
-mat4 R;
+float rototo = 0.25;
 bool escape = false;
 
 
@@ -181,19 +181,19 @@ void Update()
         break;
       case SDLK_d:
         // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(0, 0.25, 0)) * camera.basis;
+        camera.basis = translation * generateRotation(vec3(0, rototo, 0)) * camera.basis;
         break;
       case SDLK_a:
         // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(0, -0.25, 0)) * camera.basis;
+        camera.basis = translation * generateRotation(vec3(0, -rototo, 0)) * camera.basis;
         break;
       case SDLK_w:
         // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(0.25, 0, 0)) * camera.basis;
+        camera.basis = translation * generateRotation(vec3(rototo, 0, 0)) * camera.basis;
         break;
       case SDLK_s:
         // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(-0.25, 0, 0)) * camera.basis;
+        camera.basis = translation * generateRotation(vec3(-rototo, 0, 0)) * camera.basis;
         break;
       default:
         break;
