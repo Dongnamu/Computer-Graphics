@@ -20,6 +20,8 @@ using glm::mat4;
 
 float maxFloat = std::numeric_limits<float>::max();
 
+float yaw = 2 * 3.14159 / 180;
+
 struct Intersection
 {
 vec4 position;
@@ -30,15 +32,20 @@ int triangleIndex;
 struct Camera{
   vec4 position;
   mat4 basis;
+  vec3 center;
 };
 
 Camera camera = {
   .position = vec4(0,0,-2, 1.0),
-  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1))
+  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
+  // .center = vec3(0.003724, 0.929729, 0.07459)
+  .center = vec3(0,0,0)
 };
 // vec4 cameraPos(0, 0, -2, 1.0);
 mat4 R;
 bool escape = false;
+bool is_lookAt = false;
+
 
 
 
@@ -60,7 +67,6 @@ int main( int argc, char* argv[] )
   screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
   vector<Triangle> triangles;
   LoadTestModel(triangles);
-
 
   while( !escape )
     {
@@ -86,7 +92,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
     for (int col = 0; col<SCREEN_WIDTH; col++ ){
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, FOCAL_LENGTH, 1);
       Intersection intersect;
-      if (ClosestIntersection(camera.basis * camera.position, d, triangles, intersect)){
+      if (ClosestIntersection(camera.position, d, triangles, intersect)){
         PutPixelSDL(screen, row, col, triangles[intersect.triangleIndex].color);
       }
     }
@@ -94,6 +100,23 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
 }
 
+mat4 lookAt(vec3 from, vec3 to) {
+  vec3 forward = normalize(from - to);
+  vec3 right = normalize(cross(vec3(0,1,0), forward));
+  vec3 up = cross(forward, right);
+
+  vec4 forward4(forward.x, forward.y, forward.z, 0);
+  vec4 right4(right.x, right.y, right.z, 0);
+  vec4 up4(up.x, up.y, up.z, 0);
+  vec4 id(0, 0, 0, 1);
+  mat4 camToWorld(right4, up4, forward4, id);
+
+  vec4 from4(-from.x, -from.y, -from.z, 1);
+
+  // mat4 position(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), from4);
+
+  return camToWorld;
+}
 
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection){
   closestIntersection.distance = maxFloat;
@@ -161,42 +184,73 @@ void Update()
         escape = true;
       case SDLK_UP:
         // Move camera forward
-        translation[3][2] = 0.5;
+        translation[3][2] = 0.1;
         camera.position = translation*camera.position;
         break;
       case SDLK_DOWN:
       // Move camera backward
-        translation[3][2] = -0.5;
+        translation[3][2] = -0.1;
         camera.position = translation*camera.position;
         break;
       case SDLK_LEFT:
       // Move camera to the left
-        translation[3][0] = -0.5;
+        translation[3][0] = -0.1;
         camera.position = translation*camera.position;
         break;
       case SDLK_RIGHT:
       // Move camera to the right
-        translation[3][0] = 0.5;
+        translation[3][0] = 0.1;
         camera.position = translation*camera.position;
         break;
+      case SDLK_n:
+        translation[3][1] = -0.1;
+        camera.position = translation*camera.position;
+        break;
+      case SDLK_m:
+        translation[3][1] = 0.1;
+        camera.position = translation * camera.position;
+        break;
       case SDLK_d:
-        // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(0, 0.25, 0)) * camera.basis;
+        // Rotate camera right;
+        camera.basis = translation * generateRotation(vec3(0, yaw, 0)) * camera.basis;
+        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, yaw, 0)) * camera.position;
         break;
       case SDLK_a:
-        // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(0, -0.25, 0)) * camera.basis;
+        // Rotate camera left;
+        camera.basis = translation * generateRotation(vec3(0, -yaw, 0)) * camera.basis;
+        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, -yaw, 0)) * camera.position;
+
         break;
       case SDLK_w:
-        // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(0.25, 0, 0)) * camera.basis;
+        // Rotate camera top;
+        camera.basis = translation * generateRotation(vec3(yaw, 0, 0)) * camera.basis;
+        if (is_lookAt) camera.position = translation * generateRotation(vec3(yaw, 0, 0)) * camera.position;
+
         break;
       case SDLK_s:
-        // Rotate camera up;
-        camera.basis = translation * generateRotation(vec3(-0.25, 0, 0)) * camera.basis;
+        // Rotate camera down;
+        camera.basis = translation * generateRotation(vec3(-yaw, 0, 0)) * camera.basis;
+        if (is_lookAt) camera.position = translation * generateRotation(vec3(-yaw, 0, 0)) * camera.position;
+        break;
+      case SDLK_q:
+        camera.basis = translation * generateRotation(vec3(0, 0, -yaw)) * camera.basis;
+        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, 0, -yaw)) * camera.position;
+        break;
+      case SDLK_e:
+        camera.basis = translation * generateRotation(vec3(0, 0, yaw)) * camera.basis;
+        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, 0, yaw)) * camera.position;
+        break;
+      case SDLK_l:
+        if (is_lookAt) is_lookAt = false;
+        else is_lookAt = true;
         break;
       default:
         break;
+    }
+
+    if (is_lookAt) {
+      vec3 position = vec3(camera.position[0], camera.position[1], camera.position[2]);
+      camera.basis = lookAt(camera.center, position);
     }
    }
  }
