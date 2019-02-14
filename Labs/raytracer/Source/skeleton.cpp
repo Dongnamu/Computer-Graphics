@@ -5,6 +5,7 @@
 #include "TestModelH.h"
 #include <stdint.h>
 #include <limits.h>
+#include "mpi.h"
 
 using namespace std;
 using glm::vec3;
@@ -12,10 +13,11 @@ using glm::mat3;
 using glm::vec4;
 using glm::mat4;
 
-
+#define N_DIMENSION 4
+#define MASTER 0
 #define SCREEN_WIDTH 50
 #define SCREEN_HEIGHT 50
-#define FULLSCREEN_MODE true
+#define FULLSCREEN_MODE false
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -66,13 +68,13 @@ bool is_lookAt = false;
 /* FUNCTIONS                                                                   */
 
 void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles);
+void Draw(screen* screen, const vector<vector<vec3>>& pixel_light_value, const vector<vector<vec3>>& pixel_color_value, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection);
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
 vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles);
-
+void processPart(vector<vector<vec3>>& pixel_light_value, vector<vector<vec3>>& pixel_color_value, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 
 
 
@@ -80,46 +82,205 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles);
 int main( int argc, char* argv[] )
 {
 
-  screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
+  int rank;
+  int size;
+
+  int local_nrows;
+  int local_ncols;
+  int loop_row_start_point;
+  int loop_col_start_point;
+  int loop_row_end_point;
+  int loop_col_end_point;
+  int tag = 0;
+  MPI_Status status;
+
+  float *sendbuf;
+  float *recvbuf;
+
   vector<Triangle> triangles;
   LoadTestModel(triangles);
 
-  while( !escape )
-    {
-      Update();
-      Draw(screen, triangles);
-      SDL_Renderframe(screen);
-    }
+  MPI_Init(&argc, &argv);
 
-  SDL_SaveImage( screen, "screenshot.bmp" );
-  KillSDL(screen);
+  MPI_Comm_size( MPI_COMM_WORLD, &size );
+  MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+
+  if (size != N_DIMENSION) {
+    fprintf(stderr, "ErrorL number of dimension is assumed to be 4\n");
+    MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+  }
+
+  local_nrows = SCREEN_HEIGHT / 2;
+  local_ncols = SCREEN_WIDTH / 2;
+
+  vector<vector<vec3>> pixel_light_value;
+  vector<vector<vec3>> pixel_color_value;
+
+  switch (rank) {
+    case 0:
+      loop_row_start_point = 0;
+      loop_col_start_point = 0;
+      loop_row_end_point = local_nrows;
+      loop_col_end_point = local_ncols;
+      break;
+    case 1:
+      loop_row_start_point = 0;
+      loop_col_start_point = local_ncols;
+      loop_row_end_point = local_nrows;
+      loop_col_end_point = SCREEN_WIDTH;
+      break;
+    case 2:
+      loop_row_start_point = local_nrows;
+      loop_col_start_point = 0;
+      loop_row_end_point = SCREEN_HEIGHT;
+      loop_col_end_point = local_ncols;
+      break;
+    case 3:
+      loop_row_start_point = local_nrows;
+      loop_col_start_point = local_ncols;
+      loop_row_end_point = SCREEN_HEIGHT;
+      loop_col_end_point = SCREEN_WIDTH;
+      break;
+  }
+
+  sendbuf = (float*) malloc(sizeof(float) * (local_ncols * 3));
+  recvbuf = (float*) malloc(sizeof(float) * (local_ncols * 3));
+
+  screen* screen;
+
+  if (rank == MASTER) {
+    screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
+    memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+  }
+
+  while( !escape ) {
+    Update();
+
+    if (rank == MASTER) {
+      processPart(pixel_light_value, pixel_color_value, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      Draw(screen, pixel_light_value, pixel_color_value, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+
+      printf("I'm here before assign\n");
+      vec3 hello = pixel_light_value[0][0];
+      printf("I just assigned\n");
+      vector<vector<vec3>> rank_light;
+      vector<vector<vec3>> rank_color;
+
+      int rank_row_start;
+      int rank_row_end;
+      int rank_col_start;
+      int rank_col_end;
+      float x;
+      float y;
+      float z;
+      for (int k = 1; k < size; k++) {
+        MPI_Recv(recvbuf, 4, MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
+
+        rank_row_start = recvbuf[0];
+        rank_row_end = recvbuf[1];
+        rank_col_start = recvbuf[2];
+        rank_col_end = recvbuf[3];
+
+        for (int i = 0; i < local_nrows; i++) {
+          MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
+          for (int j = 0; j < local_ncols; j++) {
+            x = recvbuf[0 + 3 * j];
+            y = recvbuf[1 + 3 * j];
+            z = recvbuf[2 + 3 * j];
+
+            rank_light[i][j] = vec3(x, y, z);
+          }
+        }
+        for (int i = 0; i < local_nrows; i++) {
+          MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
+          for (int j = 0; j < local_ncols; j++) {
+            x = recvbuf[0 + 3 * j];
+            y = recvbuf[1 + 3 * j];
+            z = recvbuf[2 + 3 * j];
+
+            rank_color[i][j] = vec3(x, y, z);
+          }
+        }
+
+        Draw(screen, rank_light, rank_color, rank_row_start, rank_row_end, rank_col_start, rank_col_end);
+        printf("\nI'm here\n");
+      }
+      SDL_Renderframe(screen);
+    } else {
+      processPart(pixel_light_value, pixel_color_value, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+
+      sendbuf[0] = loop_row_start_point;
+      sendbuf[1] = loop_row_end_point;
+      sendbuf[2] = loop_col_start_point;
+      sendbuf[3] = loop_col_end_point;
+
+      MPI_Send(sendbuf, 4, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
+
+      for (int i = 0; i < local_nrows; i++) {
+        for (int j = 0; j < local_ncols; j++) {
+            sendbuf[0 + 3 * j] = pixel_light_value[i][j][0];
+            sendbuf[1 + 3 * j] = pixel_light_value[i][j][1];
+            sendbuf[2 + 3 * j] = pixel_light_value[i][j][2];
+        }
+        MPI_Send(sendbuf, (local_ncols * 3), MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
+      }
+      for (int i = 0; i < local_nrows; i++) {
+        for (int j = 0; j < local_ncols; j++) {
+            sendbuf[0 + 3 * j] = pixel_color_value[i][j][0];
+            sendbuf[1 + 3 * j] = pixel_color_value[i][j][1];
+            sendbuf[2 + 3 * j] = pixel_color_value[i][j][2];
+        }
+        MPI_Send(sendbuf, (local_ncols * 3), MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
+      }
+    }
+  }
+  //
+  // while( !escape )
+  //   {
+  //     Update();
+  //     Draw(screen, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point, rank);
+  //     SDL_Renderframe(screen);
+  //   }
+  //
+  // SDL_SaveImage( screen, "screenshot.bmp" );
+  // KillSDL(screen);
+
+  MPI_Finalize();
   return 0;
 }
 
 /*Place your drawing here*/
-void Draw(screen* screen, const vector<Triangle>& triangles)
+void Draw(screen* screen, const vector<vector<vec3>>& pixel_light_value, const vector<vector<vec3>>& pixel_color_value, const int& row_start, const int& row_end, const int& col_start, const int& col_end)
 {
   /* Clear buffer */
-  memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
 
   vec3 colour(1.0,0.0,0.0);
 
-  for (int row=0; row< SCREEN_HEIGHT; row++){
-    for (int col = 0; col<SCREEN_WIDTH; col++ ){
+  for (int row=row_start; row < row_end; row++){
+    for (int col = col_start; col<col_end; col++ ){
+      PutPixelSDL(screen, row, col, colour);
+      // vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
+      // Intersection intersect;
+      // if (ClosestIntersection(camera.position, d, triangles, intersect)){
+      //   vec3 light_power = DirectLight(intersect, triangles);
+      //   PutPixelSDL(screen, row, col, triangles[intersect.triangleIndex].color * light_power);
+      // }
+    }
+  }
+}
+
+void processPart(vector<vector<vec3>>& pixel_light_value, vector<vector<vec3>>& pixel_color_value, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
+  for (int row = row_start; row < row_end; row++) {
+    for (int col = col_start; col < col_end; col++) {
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
-      // vec4 d = vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
       Intersection intersect;
-      Intersection lightIntersect;
       if (ClosestIntersection(camera.position, d, triangles, intersect)){
-      // if(ClosestIntersection(light.position, d, triangles, lightIntersect)) {
-        // vec3 light_power = DirectLight(lightIntersect, triangles);
         vec3 light_power = DirectLight(intersect, triangles);
-        // PutPixelSDL(screen, row, col, light_power);
-        PutPixelSDL(screen, row, col, triangles[intersect.triangleIndex].color * light_power);
+        // pixel_light_value[row - row_start][col - col_start] = light_power;
+        // pixel_color_value[row - row_start][col - col_start] = triangles[intersect.triangleIndex].color;
       }
     }
   }
-
 }
 
 mat4 lookAt(vec3 from, vec3 to) {
