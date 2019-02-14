@@ -17,14 +17,15 @@ using glm::mat4;
 #define SCREEN_HEIGHT 50
 #define FOCAL_LENGTH 25
 #define FULLSCREEN_MODE true
+#define PI 3.141592
 
 float maxFloat = std::numeric_limits<float>::max();
 
 struct Intersection
 {
-vec4 position;
-float distance;
-int triangleIndex;
+  vec4 position;
+  float distance;
+  int triangleIndex;
 };
 
 struct Camera{
@@ -32,9 +33,20 @@ struct Camera{
   mat4 basis;
 };
 
+struct Light{
+  vec4 lightPos;
+  vec3 lightColor;
+};
+
 Camera camera = {
   .position = vec4(0,0,-2, 1.0),
   .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1))
+};
+
+Light light = {
+  .lightPos = vec4(0, -0.5, -0.7, 1.0),
+  .lightColor = 14.f * vec3(1,1,1)
+
 };
 // vec4 cameraPos(0, 0, -2, 1.0);
 float rototo = 0.25;
@@ -49,8 +61,7 @@ void Update();
 void Draw(screen* screen, const vector<Triangle>& triangles);
 bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection);
 void Inter(vec4 s, const Triangle triangle, Intersection& intersect);
-
-
+vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles);
 
 
 
@@ -86,14 +97,28 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
     for (int col = 0; col<SCREEN_WIDTH; col++ ){
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, FOCAL_LENGTH, 1);
       Intersection intersect;
-      if (ClosestIntersection(camera.basis * camera.position, d, triangles, intersect)){
-        PutPixelSDL(screen, row, col, triangles[intersect.triangleIndex].color);
+      if (ClosestIntersection(camera.position, d, triangles, intersect)){
+        vec3 color = DirectLight(intersect, triangles);
+        PutPixelSDL(screen, row, col, color*triangles[intersect.triangleIndex].color);
       }
     }
   }
 
 }
 
+vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles){
+  float r = glm::distance(light.lightPos, i.position);
+  float area = 4 * PI * pow(r, 2);
+
+  vec4 normal = normalize(triangles[i.triangleIndex].normal);
+  vec4 direction = normalize(light.lightPos - i.position );
+
+  float r_n = dot(direction, normal);
+
+  vec3 d = (light.lightColor * max((r_n), 0.f))/area;
+
+  return d;
+}
 
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection){
   closestIntersection.distance = maxFloat;
@@ -113,14 +138,14 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     mat3 A( -direc, e1, e2);
     vec3 x = glm::inverse( A ) * b;
 
-    //
-    // vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
-    // vec4 r = vec4(m.x, m.y, m.z, 1);
+
+    vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
+    vec4 r = vec4(m.x, m.y, m.z, 1);
 
     if (x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
       if (x[0] < closestIntersection.distance && x[0]>0){
         closestIntersection.distance = x[0];
-        closestIntersection.position = s + s * x[0];
+        closestIntersection.position = r;
         closestIntersection.triangleIndex = i;
       }
     }
@@ -138,6 +163,23 @@ mat4 generateRotation(vec3 a){
   vec4 tres = vec4(sin(a[0])*sin(a[2])+cos(a[0])*sin(a[1])*cos(a[2]), -sin(a[0])*cos(a[2])+cos(a[0])*sin(a[1])*sin(a[2]), cos(a[0])*cos(a[1]), 0);
   vec4 cuatro = vec4(0,0,0,1);
   return (mat4(uno, dos, tres, cuatro));
+}
+
+mat4 lookAt(vec3 from, vec3 to){
+  vec3 forward = normalize(from - to);
+  vec3 right   = cross(normalize(vec3(0,1,0)), forward);
+  vec3 up      = cross(forward, right);
+
+  vec4 f = vec4(forward[0], forward[1], forward[2], 0);
+  vec4 r = vec4(right[0], right[1], right[2], 0);
+  vec4 u  = vec4(up[0], up[1], up[2], 0);
+
+  vec4 fr = vec4(from[0], from[1], from[2], 1);
+
+
+  mat4  camToWorld = mat4(r, u, f, fr);
+  return camToWorld;
+
 }
 
 void Update()
@@ -179,6 +221,14 @@ void Update()
         translation[3][0] = 0.5;
         camera.position = translation*camera.position;
         break;
+      case SDLK_p:
+        translation[3][1] = 0.5;
+        camera.position = translation*camera.position;
+        break;
+      case SDLK_l:
+        translation[3][1] = -0.5;
+        camera.position = translation*camera.position;
+        break;
       case SDLK_d:
         // Rotate camera up;
         camera.basis = translation * generateRotation(vec3(0, rototo, 0)) * camera.basis;
@@ -200,4 +250,6 @@ void Update()
     }
    }
  }
+ camera.basis = lookAt(vec3(0, 0, -1), vec3(camera.position[0], camera.position[1], camera.position[2]));
+
 }
