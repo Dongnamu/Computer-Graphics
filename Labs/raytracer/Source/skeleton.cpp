@@ -15,9 +15,9 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 50
-#define SCREEN_HEIGHT 50
-#define FULLSCREEN_MODE false
+#define SCREEN_WIDTH 200
+#define SCREEN_HEIGHT 200
+#define FULLSCREEN_MODE true
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -44,22 +44,8 @@ struct Light{
     vec3 color;
 };
 
-Camera camera = {
-  .position = vec4(0,0,-2, 1.0),
-  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
-  // .center = vec3(0.003724, 0.929729, 0.07459)
-  .center = vec3(0,0,0)
-};
-
-Light light = {
-  .position = vec4(0, -0.5, -0.7, 1.0),
-  .color = 14.f * vec3(1,1,1),
-};
-
 // vec4 cameraPos(0, 0, -2, 1.0);
 mat4 R;
-bool escape = false;
-bool is_lookAt = false;
 
 
 
@@ -67,14 +53,14 @@ bool is_lookAt = false;
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 
-void Update();
-void Draw(screen* screen, const vector<vector<vec3>>& pixel_light_value, const vector<vector<vec3>>& pixel_color_value, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
+void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt);
+void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection);
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
-vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles);
-void processPart(vector<vector<vec3>>& pixel_light_value, vector<vector<vec3>>& pixel_color_value, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles);
+void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 
 
 
@@ -94,8 +80,23 @@ int main( int argc, char* argv[] )
   int tag = 0;
   MPI_Status status;
 
+  bool escape = false;
+  bool is_lookAt = false;
+
   float *sendbuf;
   float *recvbuf;
+
+  Camera camera = {
+    .position = vec4(0,0,-2, 1.0),
+    .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
+    // .center = vec3(0.003724, 0.929729, 0.07459)
+    .center = vec3(0,0,0)
+  };
+
+  Light light = {
+    .position = vec4(0, -0.5, -0.7, 1.0),
+    .color = 14.f * vec3(1,1,1),
+  };
 
   vector<Triangle> triangles;
   LoadTestModel(triangles);
@@ -113,8 +114,10 @@ int main( int argc, char* argv[] )
   local_nrows = SCREEN_HEIGHT / 2;
   local_ncols = SCREEN_WIDTH / 2;
 
-  vector<vector<vec3>> pixel_light_value;
-  vector<vector<vec3>> pixel_color_value;
+  vec3 color(0.0, 0.0, 0.0);
+
+  vec3 pixel_light_value[local_nrows][local_ncols];
+  vec3 pixel_color_value[local_nrows][local_ncols];
 
   switch (rank) {
     case 0:
@@ -143,36 +146,88 @@ int main( int argc, char* argv[] )
       break;
   }
 
-  sendbuf = (float*) malloc(sizeof(float) * (local_ncols * 3));
-  recvbuf = (float*) malloc(sizeof(float) * (local_ncols * 3));
+  sendbuf = (float*) malloc(sizeof(float) * (SCREEN_WIDTH * 3));
+  recvbuf = (float*) malloc(sizeof(float) * (SCREEN_WIDTH * 3));
 
+  bool is_screen = false;
   screen* screen;
 
-  if (rank == MASTER) {
-    screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
-    memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-  }
-
   while( !escape ) {
-    Update();
+
+    for (int i = 0; i < local_ncols; i++) {
+      for (int j = 0; j < local_nrows; j++) {
+        pixel_light_value[i][j] = color;
+        pixel_color_value[i][j] = color;
+      }
+    }
 
     if (rank == MASTER) {
-      processPart(pixel_light_value, pixel_color_value, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
-      Draw(screen, pixel_light_value, pixel_color_value, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      if (!is_screen) {
+        screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
+        memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+        is_screen = true;
+      }
 
-      printf("I'm here before assign\n");
-      vec3 hello = pixel_light_value[0][0];
-      printf("I just assigned\n");
-      vector<vector<vec3>> rank_light;
-      vector<vector<vec3>> rank_color;
+      Update(camera, light, escape, is_lookAt);
+
+
+      for (int i = 0; i < 4; i++) {
+        sendbuf[i] = camera.position[i];
+      }
+
+      vec4 c0 = camera.basis[0];
+      vec4 c1 = camera.basis[1];
+      vec4 c2 = camera.basis[2];
+      vec4 c3 = camera.basis[3];
+
+      for (int i = 4; i < 8; i++) {
+        sendbuf[i] = c0[i - 4];
+      }
+
+      for (int i = 8; i < 12; i++) {
+        sendbuf[i] = c1[i - 8];
+      }
+
+      for (int i = 12; i < 16; i++) {
+        sendbuf[i] = c2[i - 12];
+      }
+
+      for (int i = 16; i < 20; i++) {
+        sendbuf[i] = c3[i-16];
+      }
+
+      for (int i = 20; i < 24; i++) {
+        sendbuf[i] = light.position[i - 20];
+      }
+
+      if (escape) sendbuf[24] = 1;
+      else sendbuf[24] = 0;
+
+
+      for (int k = 1; k < size; k++) {
+        MPI_Send(sendbuf, 24, MPI_FLOAT, k, tag, MPI_COMM_WORLD);
+      }
+
+      if (escape) continue;
+
+      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+
+      Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      vec3 rank_light[local_ncols][local_nrows];
+      vec3 rank_color[local_ncols][local_nrows];
+
+      for (int i = 0; i < local_ncols; i++) {
+        for (int j = 0; j < local_nrows; j++) {
+          rank_light[i][j] = color;
+          rank_color[i][j] = color;
+        }
+      }
 
       int rank_row_start;
       int rank_row_end;
       int rank_col_start;
       int rank_col_end;
-      float x;
-      float y;
-      float z;
+
       for (int k = 1; k < size; k++) {
         MPI_Recv(recvbuf, 4, MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
 
@@ -184,30 +239,45 @@ int main( int argc, char* argv[] )
         for (int i = 0; i < local_nrows; i++) {
           MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
           for (int j = 0; j < local_ncols; j++) {
-            x = recvbuf[0 + 3 * j];
-            y = recvbuf[1 + 3 * j];
-            z = recvbuf[2 + 3 * j];
-
-            rank_light[i][j] = vec3(x, y, z);
+            rank_light[i][j][0] = recvbuf[0 + 3 * j];
+            rank_light[i][j][1] = recvbuf[1 + 3 * j];
+            rank_light[i][j][2] = recvbuf[2 + 3 * j];
           }
         }
         for (int i = 0; i < local_nrows; i++) {
           MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
           for (int j = 0; j < local_ncols; j++) {
-            x = recvbuf[0 + 3 * j];
-            y = recvbuf[1 + 3 * j];
-            z = recvbuf[2 + 3 * j];
-
-            rank_color[i][j] = vec3(x, y, z);
+            rank_color[i][j][0] = recvbuf[0 + 3 * j];
+            rank_color[i][j][1] = recvbuf[1 + 3 * j];
+            rank_color[i][j][2] = recvbuf[2 + 3 * j];
           }
         }
 
-        Draw(screen, rank_light, rank_color, rank_row_start, rank_row_end, rank_col_start, rank_col_end);
-        printf("\nI'm here\n");
+        Draw(screen, &rank_light[0][0], local_ncols, local_nrows, &rank_color[0][0], local_ncols, local_nrows, rank_row_start, rank_row_end, rank_col_start, rank_col_end);
+
       }
       SDL_Renderframe(screen);
     } else {
-      processPart(pixel_light_value, pixel_color_value, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+
+      MPI_Recv(recvbuf, 24, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD, &status);
+
+      camera.position = vec4(recvbuf[0], recvbuf[1], recvbuf[2], recvbuf[3]);
+
+      vec4 c0(recvbuf[4], recvbuf[5], recvbuf[6], recvbuf[7]);
+      vec4 c1(recvbuf[8], recvbuf[9], recvbuf[10], recvbuf[11]);
+      vec4 c2(recvbuf[12], recvbuf[13], recvbuf[14], recvbuf[15]);
+      vec4 c3(recvbuf[16], recvbuf[17], recvbuf[18], recvbuf[19]);
+
+      camera.basis = mat4(c0, c1, c2, c3);
+
+      light.position = vec4(recvbuf[20], recvbuf[21], recvbuf[22], recvbuf[23]);
+
+      if (recvbuf[24] == 1) escape = true;
+      else escape = false;
+
+      if (escape) continue;
+
+      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       sendbuf[0] = loop_row_start_point;
       sendbuf[1] = loop_row_end_point;
@@ -242,15 +312,15 @@ int main( int argc, char* argv[] )
   //     SDL_Renderframe(screen);
   //   }
   //
-  // SDL_SaveImage( screen, "screenshot.bmp" );
-  // KillSDL(screen);
+  SDL_SaveImage( screen, "screenshot.bmp" );
+  KillSDL(screen);
 
   MPI_Finalize();
   return 0;
 }
 
 /*Place your drawing here*/
-void Draw(screen* screen, const vector<vector<vec3>>& pixel_light_value, const vector<vector<vec3>>& pixel_color_value, const int& row_start, const int& row_end, const int& col_start, const int& col_end)
+void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end)
 {
   /* Clear buffer */
 
@@ -258,7 +328,8 @@ void Draw(screen* screen, const vector<vector<vec3>>& pixel_light_value, const v
 
   for (int row=row_start; row < row_end; row++){
     for (int col = col_start; col<col_end; col++ ){
-      PutPixelSDL(screen, row, col, colour);
+      PutPixelSDL(screen, row, col, pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] * pixel_light_value[(col - col_start) + (row - row_start) * local_ncols]);
+
       // vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
       // Intersection intersect;
       // if (ClosestIntersection(camera.position, d, triangles, intersect)){
@@ -269,15 +340,15 @@ void Draw(screen* screen, const vector<vector<vec3>>& pixel_light_value, const v
   }
 }
 
-void processPart(vector<vector<vec3>>& pixel_light_value, vector<vector<vec3>>& pixel_color_value, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
+void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
   for (int row = row_start; row < row_end; row++) {
     for (int col = col_start; col < col_end; col++) {
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
       Intersection intersect;
       if (ClosestIntersection(camera.position, d, triangles, intersect)){
-        vec3 light_power = DirectLight(intersect, triangles);
-        // pixel_light_value[row - row_start][col - col_start] = light_power;
-        // pixel_color_value[row - row_start][col - col_start] = triangles[intersect.triangleIndex].color;
+        vec3 light_power = DirectLight(light, intersect, triangles);
+        pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = light_power;
+        pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = triangles[intersect.triangleIndex].color;
       }
     }
   }
@@ -362,7 +433,7 @@ vec3 calD(vec3 r, vec3 n, vec3 power, float radius) {
   return D;
 
 }
-vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles) {
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles) {
 
   vec3 n(triangles[i.triangleIndex].normal.x, triangles[i.triangleIndex].normal.y, triangles[i.triangleIndex].normal.z);
 
@@ -375,7 +446,7 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles) {
   return calD(r, x, light.color, radius);
 }
 
-void Update()
+void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt)
 {
   static int t = SDL_GetTicks();
   /* Compute frame time */
