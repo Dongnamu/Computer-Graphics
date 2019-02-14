@@ -203,12 +203,15 @@ int main( int argc, char* argv[] )
       if (escape) sendbuf[24] = 1;
       else sendbuf[24] = 0;
 
-
+      if (escape) {
+        SDL_SaveImage( screen, "screenshot.bmp" );
+        KillSDL(screen);
+        MPI_Abort(MPI_COMM_WORLD, 0);
+        exit(0);
+      }
       for (int k = 1; k < size; k++) {
         MPI_Send(sendbuf, 24, MPI_FLOAT, k, tag, MPI_COMM_WORLD);
       }
-
-      if (escape) continue;
 
       processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
@@ -275,8 +278,6 @@ int main( int argc, char* argv[] )
       if (recvbuf[24] == 1) escape = true;
       else escape = false;
 
-      if (escape) continue;
-
       processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       sendbuf[0] = loop_row_start_point;
@@ -316,6 +317,7 @@ int main( int argc, char* argv[] )
   KillSDL(screen);
 
   MPI_Finalize();
+  exit(0);
   return 0;
 }
 
