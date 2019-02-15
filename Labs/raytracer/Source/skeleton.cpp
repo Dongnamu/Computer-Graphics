@@ -17,7 +17,7 @@ using glm::mat4;
 #define MASTER 0
 #define SCREEN_WIDTH 150
 #define SCREEN_HEIGHT 150
-#define FULLSCREEN_MODE false
+#define FULLSCREEN_MODE true
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -44,6 +44,11 @@ struct Light{
     vec3 color;
 };
 
+struct Options{
+  float bias;
+  vec3 indirectLight;
+};
+
 // vec4 cameraPos(0, 0, -2, 1.0);
 mat4 R;
 
@@ -59,8 +64,8 @@ bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
-vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles);
-void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
+vec3 DirectLight(Light &light, Options &options, const Intersection& i, const vector<Triangle>& triangles);
+void processPart(Camera &camera, Light &light, Options &options, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 
 
 
@@ -96,6 +101,11 @@ int main( int argc, char* argv[] )
   Light light = {
     .position = vec4(0, -0.5, -0.7, 1.0),
     .color = 14.f * vec3(1,1,1),
+  };
+
+  Options options = {
+    .bias = 1e-2,
+    .indirectLight = 0.5f * vec3(1,1,1)
   };
 
   vector<Triangle> triangles;
@@ -213,7 +223,7 @@ int main( int argc, char* argv[] )
         MPI_Send(sendbuf, 24, MPI_FLOAT, k, tag, MPI_COMM_WORLD);
       }
 
-      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      processPart(camera, light, options, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
       vec3 rank_light[local_ncols][local_nrows];
@@ -278,7 +288,7 @@ int main( int argc, char* argv[] )
       if (recvbuf[24] == 1) escape = true;
       else escape = false;
 
-      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      processPart(camera, light, options, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       sendbuf[0] = loop_row_start_point;
       sendbuf[1] = loop_row_end_point;
@@ -342,13 +352,13 @@ void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int lo
   }
 }
 
-void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
+void processPart(Camera &camera, Light &light, Options &options, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
   for (int row = row_start; row < row_end; row++) {
     for (int col = col_start; col < col_end; col++) {
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
       Intersection intersect;
       if (ClosestIntersection(camera.position, d, triangles, intersect)){
-        vec3 light_power = DirectLight(light, intersect, triangles);
+        vec3 light_power = DirectLight(light, options, intersect, triangles);
         pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = light_power;
         pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = triangles[intersect.triangleIndex].color;
       }
@@ -417,35 +427,23 @@ mat4 generateRotation(vec3 a){
   return (mat4(uno, dos, tres, cuatro));
 }
 
-float calA(float radius) {
-  return 4 * PI * (radius * radius);
-}
-vec3 calB(vec3 power, float radius) {
-  float a = calA(radius);
+vec3 DirectLight(Light &light, Options &options, const Intersection& i, const vector<Triangle>& triangles){
+  float r = glm::distance(light.position, i.position);
+  float area = 4 * PI * pow(r, 2);
 
-  vec3 b = power / a;
-  return b;
-}
-vec3 calD(vec3 r, vec3 n, vec3 power, float radius) {
+  vec4 normal = normalize(triangles[i.triangleIndex].normal);
+  vec4 direction = normalize(light.position - i.position );
 
-  float r_n = dot(r, n);
+  float r_n = dot(direction, normal);
 
-  vec3 D = calB(power, radius) * glm::max(r_n, 0.f);
+  vec3 d = (light.color * max((r_n), 0.f))/area;
+  Intersection intersect;
 
-  return D;
+  ClosestIntersection(i.position+triangles[i.triangleIndex].normal*options.bias, direction, triangles, intersect);
 
-}
-vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles) {
+  if (glm::distance(i.position, intersect.position) < r) return vec3(0,0,0);
 
-  vec3 n(triangles[i.triangleIndex].normal.x, triangles[i.triangleIndex].normal.y, triangles[i.triangleIndex].normal.z);
-
-  vec3 x = normalize(n);
-
-  vec3 r = normalize(light.position - i.position);
-
-  float radius = glm::distance(light.position, i.position);
-
-  return calD(r, x, light.color, radius);
+  return d;
 }
 
 void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt)
