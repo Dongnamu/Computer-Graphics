@@ -13,9 +13,9 @@ using glm::vec4;
 using glm::mat4;
 
 
-#define SCREEN_WIDTH 60
-#define SCREEN_HEIGHT 60
-#define FULLSCREEN_MODE true
+#define SCREEN_WIDTH 150
+#define SCREEN_HEIGHT 150
+#define FULLSCREEN_MODE false
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
