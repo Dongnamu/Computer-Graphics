@@ -15,8 +15,8 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 1180
-#define SCREEN_HEIGHT 1180
+#define SCREEN_WIDTH 200
+#define SCREEN_HEIGHT 200
 #define FULLSCREEN_MODE true
 #define PI 3.14159
 
