@@ -15,8 +15,8 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 150
-#define SCREEN_HEIGHT 150
+#define SCREEN_WIDTH 1180
+#define SCREEN_HEIGHT 1180
 #define FULLSCREEN_MODE true
 #define PI 3.14159
 
@@ -117,7 +117,7 @@ int main( int argc, char* argv[] )
   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
 
   if (size != N_DIMENSION) {
-    fprintf(stderr, "ErrorL number of dimension is assumed to be 4\n");
+    fprintf(stderr, "Error: number of dimension is assumed to be 4\n");
     MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
   }
 
@@ -157,7 +157,9 @@ int main( int argc, char* argv[] )
   }
 
   sendbuf = (float*) malloc(sizeof(float) * (SCREEN_WIDTH * 3));
-  recvbuf = (float*) malloc(sizeof(float) * (SCREEN_WIDTH * 3));
+  recvbuf = (float*) malloc(sizeof(float) * (SCREEN_HEIGHT * 3));
+  MPI_Buffer_attach(sendbuf, sizeof(float) * (SCREEN_WIDTH * 3));
+  MPI_Buffer_attach(recvbuf, sizeof(float) * (SCREEN_HEIGHT * 3));
 
   bool is_screen = false;
   screen* screen;
@@ -179,7 +181,6 @@ int main( int argc, char* argv[] )
       }
 
       Update(camera, light, escape, is_lookAt);
-
 
       for (int i = 0; i < 4; i++) {
         sendbuf[i] = camera.position[i];
@@ -219,6 +220,7 @@ int main( int argc, char* argv[] )
         MPI_Abort(MPI_COMM_WORLD, 0);
         exit(0);
       }
+
       for (int k = 1; k < size; k++) {
         MPI_Send(sendbuf, 24, MPI_FLOAT, k, tag, MPI_COMM_WORLD);
       }
@@ -226,15 +228,14 @@ int main( int argc, char* argv[] )
       processPart(camera, light, options, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
-      vec3 rank_light[local_ncols][local_nrows];
-      vec3 rank_color[local_ncols][local_nrows];
 
       for (int i = 0; i < local_ncols; i++) {
         for (int j = 0; j < local_nrows; j++) {
-          rank_light[i][j] = color;
-          rank_color[i][j] = color;
+          pixel_light_value[i][j] = color;
+          pixel_color_value[i][j] = color;
         }
       }
+
 
       int rank_row_start;
       int rank_row_end;
@@ -243,7 +244,6 @@ int main( int argc, char* argv[] )
 
       for (int k = 1; k < size; k++) {
         MPI_Recv(recvbuf, 4, MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
-
         rank_row_start = recvbuf[0];
         rank_row_end = recvbuf[1];
         rank_col_start = recvbuf[2];
@@ -252,21 +252,21 @@ int main( int argc, char* argv[] )
         for (int i = 0; i < local_nrows; i++) {
           MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
           for (int j = 0; j < local_ncols; j++) {
-            rank_light[i][j][0] = recvbuf[0 + 3 * j];
-            rank_light[i][j][1] = recvbuf[1 + 3 * j];
-            rank_light[i][j][2] = recvbuf[2 + 3 * j];
+            pixel_light_value[i][j][0] = recvbuf[0 + 3 * j];
+            pixel_light_value[i][j][1] = recvbuf[1 + 3 * j];
+            pixel_light_value[i][j][2] = recvbuf[2 + 3 * j];
           }
         }
         for (int i = 0; i < local_nrows; i++) {
           MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
           for (int j = 0; j < local_ncols; j++) {
-            rank_color[i][j][0] = recvbuf[0 + 3 * j];
-            rank_color[i][j][1] = recvbuf[1 + 3 * j];
-            rank_color[i][j][2] = recvbuf[2 + 3 * j];
+            pixel_color_value[i][j][0] = recvbuf[0 + 3 * j];
+            pixel_color_value[i][j][1] = recvbuf[1 + 3 * j];
+            pixel_color_value[i][j][2] = recvbuf[2 + 3 * j];
           }
         }
 
-        Draw(screen, &rank_light[0][0], local_ncols, local_nrows, &rank_color[0][0], local_ncols, local_nrows, rank_row_start, rank_row_end, rank_col_start, rank_col_end);
+        Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, rank_row_start, rank_row_end, rank_col_start, rank_col_end);
 
       }
       SDL_Renderframe(screen);
