@@ -15,8 +15,8 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 720
-#define SCREEN_HEIGHT 720
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
 #define FULLSCREEN_MODE false
 #define PI 3.14159
 
@@ -360,14 +360,35 @@ void processPart(Camera &camera, Light &light, Options &options, vec3 *pixel_lig
       vec3 total_color(0,0,0);
       float division = 0.f;
 
-      for (int subrow = 0; subrow < 8; subrow++) {
-        for (int subcol = 0; subcol < 8; subcol++) {
-          if (ClosestIntersection(camera.position, (camera.basis * vec4(row - (subrow + SCREEN_WIDTH) / 2, col - (subcol + SCREEN_HEIGHT) / 2, focal_length, 1)), triangles, intersect)) {
-            total_light_power += DirectLight(light, options, intersect, triangles);
-            total_color += triangles[intersect.triangleIndex].color;
-            division += 1;
-          }
-        }
+      srand(time(NULL));
+      // for (int subrow = 0; subrow < 4; subrow++) {
+        // for (int subcol = 0; subcol < 4; subcol++) {
+      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) - 0.3, (col - SCREEN_HEIGHT / 2) - 0.3, focal_length, 1)), triangles, intersect)) {
+        total_light_power += DirectLight(light, options, intersect, triangles);
+        total_color += triangles[intersect.triangleIndex].color;
+        division += 1;
+      }
+      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2), (col - SCREEN_HEIGHT / 2), focal_length, 1)), triangles, intersect)) {
+        total_light_power += DirectLight(light, options, intersect, triangles);
+        total_color += triangles[intersect.triangleIndex].color;
+        division += 1;
+      }
+        // }
+      // }
+      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) - 0.3, (col - SCREEN_HEIGHT / 2) + 0.3, focal_length, 1)), triangles, intersect)) {
+        total_light_power += DirectLight(light, options, intersect, triangles);
+        total_color += triangles[intersect.triangleIndex].color;
+        division += 1;
+      }
+      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) + 0.3, (col - SCREEN_HEIGHT / 2) - 0.3, focal_length, 1)), triangles, intersect)) {
+        total_light_power += DirectLight(light, options, intersect, triangles);
+        total_color += triangles[intersect.triangleIndex].color;
+        division += 1;
+      }
+      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) + 0.3, (col - SCREEN_HEIGHT / 2) + 0.3, focal_length, 1)), triangles, intersect)) {
+        total_light_power += DirectLight(light, options, intersect, triangles);
+        total_color += triangles[intersect.triangleIndex].color;
+        division += 1;
       }
 
       pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = total_light_power / division;
