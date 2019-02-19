@@ -160,6 +160,12 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	// ----------------------------------------------
 	// Scale to the volume [-1,1]^3
 
+
+	// -------------------------------------------------------
+	// Test block
+
+	//-------------------------------------------------
+
 	for( size_t i=0; i<triangles.size(); ++i )
 	{
 		triangles[i].v0 *= 2/L;
