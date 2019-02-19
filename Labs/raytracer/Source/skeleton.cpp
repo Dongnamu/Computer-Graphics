@@ -17,7 +17,7 @@ using glm::mat4;
 #define MASTER 0
 #define SCREEN_WIDTH 1080
 #define SCREEN_HEIGHT 1080
-#define FULLSCREEN_MODE true
+#define FULLSCREEN_MODE false
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -400,23 +400,36 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     vec3 direc(d[0], d[1], d[2]);
 
     mat3 A( -direc, e1, e2);
-    vec3 x = glm::inverse( A ) * b;
 
-    //
-    // vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
-    // vec4 r = vec4(m.x, m.y, m.z, 1);
+    float detA = glm::determinant(A);
 
-    if (x[0] < closestIntersection.distance && x[0]>0 && x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
-      closestIntersection.distance = x[0];
-      closestIntersection.position = s + x[0] * d;
-      closestIntersection.triangleIndex = i;
+    mat3 T(b, e1, e2);
+
+    float detT = glm::determinant(T);
+
+    float t = detT / detA;
+
+    if (t < closestIntersection.distance && t > 0) {
+      mat3 U(-direc, b, e2);
+      mat3 V(-direc, e1, b);
+      float detU = glm::determinant(U);
+      float detV = glm::determinant(V);
+
+      float u = detU / detA;
+      float v = detV / detA;
+
+      if (u >= 0 && v >= 0 && u + v <= 1) {
+        closestIntersection.distance = t;
+        closestIntersection.position = s + t * d;
+        closestIntersection.triangleIndex = i;
+      }
     }
+
   }
   if (closestIntersection.distance == maxFloat) return false;
 
   return true;
 }
-
 
 /*Place updates of parameters here*/
 mat4 generateRotation(vec3 a){
