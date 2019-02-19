@@ -1,0 +1,35 @@
+closestIntersection.distance = maxFloat;
+for(uint i = 0; i < triangles.size(); i++){
+
+  Triangle triangle = triangles[i];
+  vec4 v0 = triangle.v0;
+  vec4 v1 = triangle.v1;
+  vec4 v2 = triangle.v2;
+
+  vec3 e1 = vec3(v1.x-v0.x,v1.y-v0.y,v1.z-v0.z);
+  vec3 e2 = vec3(v2.x-v0.x,v2.y-v0.y,v2.z-v0.z);
+  // vec3 b = vec3(s.x-v0.x,s.y-v0.y,s.z-v0.z);
+
+  vec3 direc(d[0], d[1], d[2]);
+  vec3 st(s[0], s[1], s[2]);
+
+  vec3 p = direc * e2;
+  vec3 q = st * e1;
+
+  float t = glm::dot(q, e2);
+
+  if (t < closestIntersection.distance && t > 0) {
+    p = direc * e2;
+    float u = glm::dot(p, st);
+    float v = glm::dot(q, direc);
+    if (u >= 0 && v >= 0 && u + v <= 1) {
+      closestIntersection.distance = t;
+      closestIntersection.position = s + t * d;
+      closestIntersection.triangleIndex = i;
+
+    }
+  }
+}
+if (closestIntersection.distance == maxFloat) return false;
+
+return true;

@@ -15,9 +15,9 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 1080
-#define FULLSCREEN_MODE true
+#define SCREEN_WIDTH 720
+#define SCREEN_HEIGHT 720
+#define FULLSCREEN_MODE false
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -355,47 +355,19 @@ void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int lo
 void processPart(Camera &camera, Light &light, Options &options, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
   for (int row = row_start; row < row_end; row++) {
     for (int col = col_start; col < col_end; col++) {
-      vec4 d1 = camera.basis * vec4(row - (1 + SCREEN_WIDTH) / 2, col - (1 + SCREEN_HEIGHT) / 2, focal_length, 1);
-      vec4 d2 = camera.basis * vec4(row - (1 + SCREEN_WIDTH) / 2, col - (2 + SCREEN_HEIGHT) / 2, focal_length, 1);
-      vec4 d3 = camera.basis * vec4(row - (2 + SCREEN_WIDTH) / 2, col - (1 + SCREEN_HEIGHT) / 2, focal_length, 1);
-      vec4 d4 = camera.basis * vec4(row - (2 + SCREEN_WIDTH) / 2, col - (2 + SCREEN_HEIGHT) / 2, focal_length, 1);
-
-      Intersection intersect1;
-      Intersection intersect2;
-      Intersection intersect3;
-      Intersection intersect4;
-
-      bool is_Intersect1 = ClosestIntersection(camera.position, d1, triangles, intersect1);
-      bool is_Intersect2 = ClosestIntersection(camera.position, d2, triangles, intersect2);
-      bool is_Intersect3 = ClosestIntersection(camera.position, d3, triangles, intersect3);
-      bool is_Intersect4 = ClosestIntersection(camera.position, d4, triangles, intersect4);
-
+      Intersection intersect;
       vec3 total_light_power(0,0,0);
       vec3 total_color(0,0,0);
       float division = 0.f;
 
-      if (is_Intersect1) {
-         total_light_power += DirectLight(light, options, intersect1, triangles);
-         total_color += triangles[intersect1.triangleIndex].color;
-         division += 1;
-      }
-
-      if (is_Intersect2) {
-         total_light_power += DirectLight(light, options, intersect2, triangles);
-         total_color += triangles[intersect2.triangleIndex].color;
-         division += 1;
-      }
-
-      if (is_Intersect3) {
-         total_light_power += DirectLight(light, options, intersect3, triangles);
-         total_color += triangles[intersect3.triangleIndex].color;
-         division += 1;
-      }
-
-      if (is_Intersect4) {
-         total_light_power += DirectLight(light, options, intersect4, triangles);
-         total_color += triangles[intersect4.triangleIndex].color;
-         division += 1;
+      for (int subrow = 0; subrow < 8; subrow++) {
+        for (int subcol = 0; subcol < 8; subcol++) {
+          if (ClosestIntersection(camera.position, (camera.basis * vec4(row - (subrow + SCREEN_WIDTH) / 2, col - (subcol + SCREEN_HEIGHT) / 2, focal_length, 1)), triangles, intersect)) {
+            total_light_power += DirectLight(light, options, intersect, triangles);
+            total_color += triangles[intersect.triangleIndex].color;
+            division += 1;
+          }
+        }
       }
 
       pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = total_light_power / division;
@@ -439,21 +411,31 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
 
     vec3 e1 = vec3(v1.x-v0.x,v1.y-v0.y,v1.z-v0.z);
     vec3 e2 = vec3(v2.x-v0.x,v2.y-v0.y,v2.z-v0.z);
-    vec3 b = vec3(s.x-v0.x,s.y-v0.y,s.z-v0.z);
+    // vec3 b = vec3(s.x-v0.x,s.y-v0.y,s.z-v0.z);
 
     vec3 direc(d[0], d[1], d[2]);
+    vec3 st(s[0], s[1], s[2]);
 
-    mat3 A( -direc, e1, e2);
-    vec3 x = glm::inverse( A ) * b;
 
-    //
-    // vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
-    // vec4 r = vec4(m.x, m.y, m.z, 1);
+    mat3 A( -direc, e1, e2 );
 
-    if (x[0] < closestIntersection.distance && x[0]>0 && x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
-      closestIntersection.distance = x[0];
-      closestIntersection.position = s + x[0] * d;
-      closestIntersection.triangleIndex = i;
+    mat3 IA = glm::inverse(A);
+
+    mat3 T(-st, e1, e2);
+
+    float t = glm::determinant(IA) * glm::determinant(A);
+
+    if (t > 0 && t < closestIntersection.distance) {
+      mat3 U(-direc, st, e2);
+      mat3 V(-direc, e1, st);
+      float u = glm::determinant(IA) * glm::determinant(U);
+      float v = glm::determinant(IA) * glm::determinant(V);
+
+      if (u >=0 && v >= 0 && u + v <= 1) {
+        closestIntersection.distance = t;
+        closestIntersection.position = s + t * d;
+        closestIntersection.triangleIndex = i;
+      }
     }
   }
   if (closestIntersection.distance == maxFloat) return false;
