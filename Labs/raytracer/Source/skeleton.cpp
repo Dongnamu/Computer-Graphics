@@ -411,32 +411,36 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
 
     vec3 e1 = vec3(v1.x-v0.x,v1.y-v0.y,v1.z-v0.z);
     vec3 e2 = vec3(v2.x-v0.x,v2.y-v0.y,v2.z-v0.z);
-    // vec3 b = vec3(s.x-v0.x,s.y-v0.y,s.z-v0.z);
+    vec3 b = vec3(s.x-v0.x,s.y-v0.y,s.z-v0.z);
 
     vec3 direc(d[0], d[1], d[2]);
-    vec3 st(s[0], s[1], s[2]);
 
+    mat3 A( -direc, e1, e2);
 
-    mat3 A( -direc, e1, e2 );
+    float detA = glm::determinant(A);
 
-    mat3 IA = glm::inverse(A);
+    mat3 T(b, e1, e2);
 
-    mat3 T(-st, e1, e2);
+    float detT = glm::determinant(T);
 
-    float t = glm::determinant(IA) * glm::determinant(A);
+    float t = detT / detA;
 
-    if (t > 0 && t < closestIntersection.distance) {
-      mat3 U(-direc, st, e2);
-      mat3 V(-direc, e1, st);
-      float u = glm::determinant(IA) * glm::determinant(U);
-      float v = glm::determinant(IA) * glm::determinant(V);
+    if (t < closestIntersection.distance && t > 0) {
+      mat3 U(-direc, b, e2);
+      mat3 V(-direc, e1, b);
+      float detU = glm::determinant(U);
+      float detV = glm::determinant(V);
 
-      if (u >=0 && v >= 0 && u + v <= 1) {
+      float u = detU / detA;
+      float v = detV / detA;
+
+      if (u >= 0 && v >= 0 && u + v <= 1) {
         closestIntersection.distance = t;
         closestIntersection.position = s + t * d;
         closestIntersection.triangleIndex = i;
       }
     }
+
   }
   if (closestIntersection.distance == maxFloat) return false;
 
