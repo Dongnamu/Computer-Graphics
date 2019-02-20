@@ -130,10 +130,10 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
         vec3 color = triangles[intersect.triangleIndex].color;
         // printf("Distance: %f\n R: %f\n G: %f\n B: %f\n ", intersect.distance, color.x, color.y, color.z);
 
-        vec3 c = focusGaussian(intersect, triangles, row, col, normalize(d));
+        // vec3 c = focusGaussian(intersect, triangles, row, col, normalize(d));
         // printf("R: %f\n G: %f\n B: %f\n ",  c.x, c.y, c.z);
         vec3 mainShadow = fadedShadows(intersect, triangles);
-        PutPixelSDL(screen, row, col,  c * (mainShadow + options.indirectLight));
+        PutPixelSDL(screen, row, col,  color * (mainShadow + options.indirectLight));
       }
     }
   }
