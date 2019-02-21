@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include "mpi.h"
+#include "random"
 
 using namespace std;
 using glm::vec3;
@@ -15,9 +16,9 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 1080
-#define FULLSCREEN_MODE false
+#define SCREEN_WIDTH 720
+#define SCREEN_HEIGHT 720
+#define FULLSCREEN_MODE true
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -60,13 +61,13 @@ mat4 R;
 
 void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt);
 void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
-bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection);
+bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection, int index = -1);
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
-vec3 DirectLight(Light &light, Options &options, const Intersection& i, const vector<Triangle>& triangles);
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles);
 void processPart(Camera &camera, Light &light, Options &options, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
-
+vec3 fadedShadows(Light &light, const Intersection& i, const vector<Triangle>& triangles);
 
 
 
@@ -358,41 +359,42 @@ void processPart(Camera &camera, Light &light, Options &options, vec3 *pixel_lig
       Intersection intersect;
       vec3 total_light_power(0,0,0);
       vec3 total_color(0,0,0);
-      float division = 0.f;
-
-      srand(time(NULL));
+      vec3 mainShadow(0,0,0);
+      // float division = 0.f;
       // for (int subrow = 0; subrow < 4; subrow++) {
         // for (int subcol = 0; subcol < 4; subcol++) {
-      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) - 0.3, (col - SCREEN_HEIGHT / 2) - 0.3, focal_length, 1)), triangles, intersect)) {
-        total_light_power += DirectLight(light, options, intersect, triangles);
-        total_color += triangles[intersect.triangleIndex].color;
-        division += 1;
-      }
-      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2), (col - SCREEN_HEIGHT / 2), focal_length, 1)), triangles, intersect)) {
-        total_light_power += DirectLight(light, options, intersect, triangles);
-        total_color += triangles[intersect.triangleIndex].color;
-        division += 1;
-      }
-        // }
+      // if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) - 0.3, (col - SCREEN_HEIGHT / 2) - 0.3, focal_length, 1)), triangles, intersect)) {
+      //   total_light_power += DirectLight(light, intersect, triangles);
+      //   total_color += triangles[intersect.triangleIndex].color;
+      //   division += 1;
       // }
-      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) - 0.3, (col - SCREEN_HEIGHT / 2) + 0.3, focal_length, 1)), triangles, intersect)) {
-        total_light_power += DirectLight(light, options, intersect, triangles);
+      //   // }
+      // if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) - 0.3, (col - SCREEN_HEIGHT / 2) + 0.3, focal_length, 1)), triangles, intersect)) {
+      //   total_light_power += DirectLight(light, intersect, triangles);
+      //   total_color += triangles[intersect.triangleIndex].color;
+      //   division += 1;
+      // }
+      // if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) + 0.3, (col - SCREEN_HEIGHT / 2) - 0.3, focal_length, 1)), triangles, intersect)) {
+      //   total_light_power += DirectLight(light, intersect, triangles);
+      //   total_color += triangles[intersect.triangleIndex].color;
+      //   division += 1;
+      // }
+      // if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) + 0.3, (col - SCREEN_HEIGHT / 2) + 0.3, focal_length, 1)), triangles, intersect)) {
+      //   total_light_power += DirectLight(light, intersect, triangles);
+      //   total_color += triangles[intersect.triangleIndex].color;
+      //   division += 1;
+      // }
+      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2), (col - SCREEN_HEIGHT / 2), focal_length, 1)), triangles, intersect)) {
+        // total_light_power += DirectLight(light, intersect, triangles);
         total_color += triangles[intersect.triangleIndex].color;
-        division += 1;
-      }
-      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) + 0.3, (col - SCREEN_HEIGHT / 2) - 0.3, focal_length, 1)), triangles, intersect)) {
-        total_light_power += DirectLight(light, options, intersect, triangles);
-        total_color += triangles[intersect.triangleIndex].color;
-        division += 1;
-      }
-      if (ClosestIntersection(camera.position, (camera.basis * vec4((row - SCREEN_WIDTH / 2) + 0.3, (col - SCREEN_HEIGHT / 2) + 0.3, focal_length, 1)), triangles, intersect)) {
-        total_light_power += DirectLight(light, options, intersect, triangles);
-        total_color += triangles[intersect.triangleIndex].color;
-        division += 1;
+
+        mainShadow += fadedShadows(light, intersect, triangles);
+
+        // division += 1;
       }
 
-      pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = total_light_power / division;
-      pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = total_color / division;
+      pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = mainShadow + (total_light_power) + options.indirectLight;
+      pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = total_color;
 
       // if (ClosestIntersection(camera.position, d, triangles, intersect)){
       //   vec3 light_power = DirectLight(light, options, intersect, triangles);
@@ -421,9 +423,16 @@ mat4 lookAt(vec3 from, vec3 to) {
   return camToWorld;
 }
 
-bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection){
+bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection, int index){
   closestIntersection.distance = maxFloat;
   for(uint i = 0; i < triangles.size(); i++){
+
+    if (index > -1) {
+      if (index == i) continue;
+      if (dot(normalize(triangles[index].normal), normalize(d)) < 0) continue;
+      // float angle = acos(dot(normalize(triangles[i].normal),normalize(d)))/abs(dot(normalize(triangles[i].normal),normalize(d)));
+      // if (angle >=  1.5708) continue;
+    }
 
     Triangle triangle = triangles[i];
     vec4 v0 = triangle.v0;
@@ -477,23 +486,45 @@ mat4 generateRotation(vec3 a){
   return (mat4(uno, dos, tres, cuatro));
 }
 
-vec3 DirectLight(Light &light, Options &options, const Intersection& i, const vector<Triangle>& triangles){
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles){
   float r = glm::distance(light.position, i.position);
   float area = 4 * PI * pow(r, 2);
 
+  std::default_random_engine generator;
+  std::uniform_real_distribution<float> distributionx(-0.005, 0.005);
+  std::uniform_real_distribution<float> distributiony(-0.0001, 0.0001);
+
   vec4 normal = normalize(triangles[i.triangleIndex].normal);
-  vec4 direction = normalize(light.position - i.position );
+  vec4 direction = normalize(light.position - i.position) + vec4(distributionx(generator), distributionx(generator), distributionx(generator), 0);
 
   float r_n = dot(direction, normal);
 
   vec3 d = (light.color * max((r_n), 0.f))/area;
   Intersection intersect;
 
-  ClosestIntersection(i.position+triangles[i.triangleIndex].normal*options.bias, direction, triangles, intersect);
-
-  if (glm::distance(i.position, intersect.position) < r) return vec3(0,0,0);
+  if (ClosestIntersection(i.position, direction, triangles, intersect, i.triangleIndex)) {
+    if (glm::distance(i.position, intersect.position) < r && glm::distance(i.position, intersect.position) >= 1e-10) return vec3(0,0,0);
+  }
 
   return d;
+}
+
+vec3 fadedShadows(Light& light, const Intersection& i, const vector<Triangle>& triangles){
+  Intersection neg = i;
+  neg.position = neg.position + 0.01f*normalize(triangles[i.triangleIndex].normal);
+  Intersection pos = i;
+  pos.position = pos.position + 0.02f*normalize(triangles[i.triangleIndex].normal);
+  Intersection neg1 = i;
+  neg1.position = neg1.position + 0.03f*normalize(triangles[i.triangleIndex].normal);
+  Intersection pos1 = i;
+  pos1.position = pos1.position + 0.04f*normalize(triangles[i.triangleIndex].normal);
+  vec3 light_power = DirectLight(light, i, triangles);
+  vec3 neg_light = DirectLight(light, neg, triangles);
+  vec3 pos_light = DirectLight(light, pos, triangles);
+  vec3 neg_light1 = DirectLight(light, neg1, triangles);
+  vec3 pos_light1 = DirectLight(light, pos1, triangles);
+
+  return (light_power+neg_light+pos_light+neg_light1+pos_light1)/5.f;
 }
 
 void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt)
