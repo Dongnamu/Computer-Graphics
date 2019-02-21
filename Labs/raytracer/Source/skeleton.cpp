@@ -17,8 +17,8 @@ using glm::mat4;
 
 
 
-#define SCREEN_WIDTH 50
-#define SCREEN_HEIGHT 50
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
 
 #define FULLSCREEN_MODE true
 #define PI 3.14159
@@ -27,7 +27,7 @@ float maxFloat = std::numeric_limits<float>::max();
 
 float yaw = 2 * PI / 180;
 
-float focal_length = SCREEN_HEIGHT / 2;
+float focal_length = SCREEN_HEIGHT/2;
 
 struct Intersection
 {
@@ -64,7 +64,7 @@ Light light = {
 
 Options options = {
   .bias = 1e-3,
-  .indirectLight = 0.5f*vec3(1,1,1)
+  .indirectLight = 0.1f*vec3(1,1,1)
 };
 
 // vec4 cameraPos(0, 0, -2, 1.0);
@@ -72,13 +72,13 @@ mat4 R;
 bool escape = false;
 bool is_lookAt = false;
 
-float focalDistance = 0.12f;
+float focalDistance = 0.058f;
 
 
-
+float aperture = 0.0003f;
 std::default_random_engine generator;
 std::uniform_real_distribution<float> distributionx(-0.005, 0.005);
-std::uniform_real_distribution<float> distributiony(-0.0001, 0.0001);
+std::uniform_real_distribution<float> distributiony(-aperture, aperture);
 
 
 /* ----------------------------------------------------------------------------*/
@@ -91,9 +91,9 @@ float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
 vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles);
-vec3 SoftShadow(Intersection& i, const vector<Triangle>& triangles);
 vec3 fadedShadows(const Intersection& i, const vector<Triangle>& triangles);
-vec3 focusGaussian(const Intersection& i, const vector<Triangle>& triangles, int row, int col, vec4 principalDirection);
+vec3 focusGaussian(const vector<Triangle>& triangles, int row, int col, vec4 principalDirection);
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles);
 
 int main( int argc, char* argv[] )
 {
@@ -120,45 +120,48 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
   /* Clear buffer */
   memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
 
-
+  vec3 emergencyColor(0.f,0.f,0.f);
   for (int row=0; row< SCREEN_HEIGHT; row++){
     for (int col = 0; col<SCREEN_WIDTH; col++ ){
-      vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
-      // vec4 d = vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
-      Intersection intersect;
-      if (ClosestIntersection(camera.position, d, triangles, intersect)){
-        vec3 color = triangles[intersect.triangleIndex].color;
-        // printf("Distance: %f\n R: %f\n G: %f\n B: %f\n ", intersect.distance, color.x, color.y, color.z);
-
-        // vec3 c = focusGaussian(intersect, triangles, row, col, normalize(d));
-        // printf("R: %f\n G: %f\n B: %f\n ",  c.x, c.y, c.z);
-        vec3 mainShadow = fadedShadows(intersect, triangles);
-        PutPixelSDL(screen, row, col,  color * (mainShadow + options.indirectLight));
-      }
+      vec3 c = processingPart(row, col, triangles);
+      printf("Aperture: %f\n, Focal Distance %f\n", aperture, focalDistance);
+      PutPixelSDL(screen, row, col, c);
     }
   }
 }
 
-vec3 focusGaussian(const Intersection& i, const vector<Triangle>& triangles, int row, int col, vec4 principalDirection) {
-  float aperture = 0.001f;
-  vec3 color(0,0,0);
-  float hitNumber = 1.0f;
-  vec4 target = camera.position + focalDistance * principalDirection;
 
-  for (float x = -aperture; x <= aperture; x+= aperture){
-    for (float y = -aperture; y <= aperture; y+= aperture){
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles) {
+  Intersection intersect;
+  vec3 color(0.f, 0.f, 0.f);
+  vec3 shadow(0.f, 0.f, 0.f);
+  vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
+  vec3 blurrColor = focusGaussian(triangles, row, col, normalize(d));
+  color += blurrColor;
+  return color + options.indirectLight;
+}
+
+vec3 focusGaussian(const vector<Triangle>& triangles, int row, int col, vec4 principalDirection) {
+  vec3 color(0.f,0.f,0.f);
+  float hitNumber = 0.f;
+  vec3 shadow(0.f, 0.f, 0.f);
+  vec4 target = camera.position + focalDistance * principalDirection;
+  for (float x = -aperture; x <= aperture; x+= aperture*2){
+    for (float y = -aperture; y <= aperture; y+= aperture*2){
+      if (x == 0 && y == 0) printf("centered\n");
       vec4 randomPoint = vec4(camera.position[0] + x, camera.position[1] + y, camera.position[2], camera.position[3]);
-      vec4 direction = (target - randomPoint);
+      vec4 direction = target - randomPoint;
       Intersection inter;
       if (ClosestIntersection(randomPoint, direction, triangles, inter)){
         hitNumber += 1.0f;
         color += triangles[inter.triangleIndex].color;
+        shadow+= fadedShadows(inter, triangles);
       }
     }
   }
-  printf("%f\n", focalDistance);
-
-  return color/hitNumber;
+  // printf("%f\n", hitNumber);
+  if (hitNumber == 0.f) return color;
+  else return color/hitNumber * shadow/hitNumber;
 }
 
 
@@ -201,6 +204,7 @@ mat4 lookAt(vec3 from, vec3 to) {
 
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection, int index){
   closestIntersection.distance = maxFloat;
+
   for(uint i = 0; i < triangles.size(); i++){
     if (index > -1) {
       if (index == i) continue;
@@ -229,6 +233,7 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     vec4 r = vec4(m.x, m.y, m.z, 1);
 
 
+
     // if (index > -1) {
     //   if (dot(normalize(v1),normalize(triangles[index].normal)) == 0) {
     //     continue;
@@ -241,9 +246,10 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
       closestIntersection.triangleIndex = i;
     }
   }
-  if (closestIntersection.distance == maxFloat) return false;
-
-
+  if (closestIntersection.distance == maxFloat) {
+    // printf("NOOOO HIIIIT!\n");
+    return false;
+  }
 
   return true;
 }
@@ -263,16 +269,19 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles){
   float area = 4 * PI * pow(r, 2);
 
   vec4 normal = normalize(triangles[i.triangleIndex].normal);
-  vec4 direction = normalize(light.position - i.position) + vec4(distributionx(generator), distributionx(generator), distributionx(generator), 0);
+  vec4 direction = normalize(light.position + vec4(distributionx(generator), distributionx(generator), distributionx(generator), 0) - i.position) ;
 
   float r_n = dot(direction, normal);
 
   vec3 d = (light.color * max((r_n), 0.f))/area;
   Intersection intersect;
 
-  ClosestIntersection(i.position, direction, triangles, intersect, i.triangleIndex);
+  if (ClosestIntersection(i.position, direction, triangles, intersect, i.triangleIndex)){
+    if (glm::distance(i.position, intersect.position) < r && glm::distance(i.position, intersect.position) >= 1e-10) {
+      return vec3(0,0,0);
+    }
+  }
 
-  if (glm::distance(i.position, intersect.position) < r && glm::distance(i.position, intersect.position) >= 1e-10) return vec3(0,0,0);
 
   return d;
 }
@@ -372,10 +381,16 @@ void Update()
         light.position += vec4(0.1, 0, 0, 0);
         break;
       case SDLK_t:
-        focalDistance += 0.01;
+        focalDistance += 0.001;
         break;
       case SDLK_g:
-        focalDistance -= 0.01;
+        focalDistance -= 0.001;
+        break;
+      case SDLK_c:
+        aperture -= 0.0001;
+        break;
+      case SDLK_v:
+        aperture += 0.0001;
         break;
       default:
         break;
