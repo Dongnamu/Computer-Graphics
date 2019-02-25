@@ -16,10 +16,11 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 720
-#define SCREEN_HEIGHT 720
+#define SCREEN_WIDTH 300
+#define SCREEN_HEIGHT 300
 #define FULLSCREEN_MODE true
-#define PI 3.14159
+#define PI 3.14159265359
+
 
 float maxFloat = std::numeric_limits<float>::max();
 
@@ -163,9 +164,6 @@ int main( int argc, char* argv[] )
 
   sendbuf = (float*) malloc(sizeof(float) * (SCREEN_WIDTH * 3));
   recvbuf = (float*) malloc(sizeof(float) * (SCREEN_HEIGHT * 3));
-  MPI_Buffer_attach(sendbuf, sizeof(float) * (SCREEN_WIDTH * 3));
-  MPI_Buffer_attach(recvbuf, sizeof(float) * (SCREEN_HEIGHT * 3));
-
   bool is_screen = false;
   screen* screen;
 
@@ -345,6 +343,7 @@ void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int lo
 
   for (int row=row_start; row < row_end; row++){
     for (int col = col_start; col<col_end; col++ ){
+
       PutPixelSDL(screen, row, col, pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] + pixel_light_value[(col - col_start) + (row - row_start) * local_ncols]);
 
       // vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
@@ -373,6 +372,8 @@ void processPart(Camera &camera, Light &light, Options &options, float &focalDis
         total_color = blurrColor;
 
         // division += 1;
+      } else {
+        printf("Not crossed\n");
       }
 
       pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = options.indirectLight;
@@ -407,8 +408,8 @@ mat4 lookAt(vec3 from, vec3 to) {
 
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection, int index){
   closestIntersection.distance = maxFloat;
-  for(uint i = 0; i < triangles.size(); i++){
 
+  for(uint i = 0; i < triangles.size(); i++){
     if (index > -1) {
       if (index == i) continue;
       if (dot(normalize(triangles[index].normal), normalize(d)) < 0) continue;
@@ -429,32 +430,28 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
 
     mat3 A( -direc, e1, e2);
 
-    float detA = glm::determinant(A);
+    vec3 x = glm::inverse( A ) * b;
 
-    mat3 T(b, e1, e2);
+    vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
+    vec4 r = vec4(m.x, m.y, m.z, 1);
 
-    float detT = glm::determinant(T);
 
-    float t = detT / detA;
+    // if (index > -1) {
+    //   if (dot(normalize(v1),normalize(triangles[index].normal)) == 0) {
+    //     continue;
+    //   }
+    // }
 
-    if (t < closestIntersection.distance && t > 0) {
-      mat3 U(-direc, b, e2);
-      mat3 V(-direc, e1, b);
-      float detU = glm::determinant(U);
-      float detV = glm::determinant(V);
 
-      float u = detU / detA;
-      float v = detV / detA;
-
-      if (u >= 0 && v >= 0 && u + v <= 1) {
-        closestIntersection.distance = t;
-        closestIntersection.position = s + t * d;
-        closestIntersection.triangleIndex = i;
-      }
+    if (x[0] < closestIntersection.distance && x[0]>0 && x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
+      closestIntersection.distance = x[0];
+      closestIntersection.position = r;
+      closestIntersection.triangleIndex = i;
     }
-
   }
-  if (closestIntersection.distance == maxFloat) return false;
+  if (closestIntersection.distance == maxFloat) {
+    return false;
+  }
 
   return true;
 }
