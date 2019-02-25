@@ -18,7 +18,7 @@ using glm::mat4;
 #define MASTER 0
 #define SCREEN_WIDTH 300
 #define SCREEN_HEIGHT 300
-#define FULLSCREEN_MODE true
+#define FULLSCREEN_MODE false
 #define PI 3.14159265359
 
 
@@ -95,7 +95,7 @@ int main( int argc, char* argv[] )
   float *recvbuf;
 
   Camera camera = {
-    .position = vec4(0,0,-2, 1.0),
+    .position = vec4(0.f,0.f,-2.f, 1.f),
     .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
     // .center = vec3(0.003724, 0.929729, 0.07459)
     .center = vec3(0,0,0)
@@ -373,7 +373,7 @@ void processPart(Camera &camera, Light &light, Options &options, float &focalDis
 
         // division += 1;
       } else {
-        printf("Not crossed\n");
+        printf("Pixel: %d %d is not crossed\n", row, col);
       }
 
       pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = options.indirectLight;
