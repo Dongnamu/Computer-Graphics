@@ -17,8 +17,8 @@ using glm::mat4;
 
 
 
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 1080
+#define SCREEN_WIDTH 256
+#define SCREEN_HEIGHT 256
 
 #define FULLSCREEN_MODE true
 #define PI 3.14159
@@ -59,12 +59,12 @@ Camera camera = {
 
 Light light = {
   .position = vec4(0, -0.5, -0.7, 1.0),
-  .color = 14.f * vec3(1,1,1),
+  .color = 20.f * vec3(1,1,1),
 };
 
 Options options = {
   .bias = 1e-3,
-  .indirectLight = 0.1f*vec3(1,1,1)
+  .indirectLight = 0.01f*vec3(1,1,1)
 };
 
 // vec4 cameraPos(0, 0, -2, 1.0);
@@ -146,8 +146,8 @@ vec3 focusGaussian(const vector<Triangle>& triangles, int row, int col, vec4 pri
   float hitNumber = 0.f;
   vec3 shadow(0.f, 0.f, 0.f);
   vec4 target = camera.position + focalDistance * principalDirection;
-  for (float x = -aperture; x <= aperture; x+= aperture*2){
-    for (float y = -aperture; y <= aperture; y+= aperture*2){
+  for (float x = -aperture; x <= aperture; x+= aperture){
+    for (float y = -aperture; y <= aperture; y+= aperture){
       if (x == 0 && y == 0) printf("centered\n");
       vec4 randomPoint = vec4(camera.position[0] + x, camera.position[1] + y, camera.position[2], camera.position[3]);
       vec4 direction = target - randomPoint;
@@ -166,21 +166,15 @@ vec3 focusGaussian(const vector<Triangle>& triangles, int row, int col, vec4 pri
 
 
 vec3 fadedShadows(const Intersection& i, const vector<Triangle>& triangles){
-  Intersection neg = i;
-  neg.position = neg.position + 0.01f*normalize(triangles[i.triangleIndex].normal);
-  Intersection pos = i;
-  pos.position = pos.position + 0.02f*normalize(triangles[i.triangleIndex].normal);
-  Intersection neg1 = i;
-  neg1.position = neg1.position + 0.03f*normalize(triangles[i.triangleIndex].normal);
-  Intersection pos1 = i;
-  pos1.position = pos1.position + 0.04f*normalize(triangles[i.triangleIndex].normal);
   vec3 light_power = DirectLight(i, triangles);
-  vec3 neg_light = DirectLight(neg, triangles);
-  vec3 pos_light = DirectLight(pos, triangles);
-  vec3 neg_light1 = DirectLight(neg1, triangles);
-  vec3 pos_light1 = DirectLight(pos1, triangles);
-
-  return (light_power+neg_light+pos_light+neg_light1+pos_light1)/5.f;
+  float rayCounter = 0.0f;
+  for (float j = 0.01f; j <= 0.02; j+=0.01) {
+    Intersection inter = i;
+    inter.position = inter.position + j*normalize(triangles[i.triangleIndex].normal);
+    light_power += DirectLight(inter, triangles);
+    rayCounter++;
+  }
+  return light_power/rayCounter;
 }
 
 mat4 lookAt(vec3 from, vec3 to) {
@@ -209,12 +203,8 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     if (index > -1) {
       if (index == i) continue;
       if (dot(normalize(triangles[index].normal), normalize(d)) < 0) continue;
-      // float angle = acos(dot(normalize(triangles[i].normal),normalize(d)))/abs(dot(normalize(triangles[i].normal),normalize(d)));
-      // if (angle >=  1.5708) continue;
     }
-    // else {
-    //   if (dot(normalize(triangles[i].normal), normalize(d)) > 0) continue;
-    // }
+
     Triangle triangle = triangles[i];
     vec4 v0 = triangle.v0;
     vec4 v1 = triangle.v1;
@@ -232,14 +222,6 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
     vec4 r = vec4(m.x, m.y, m.z, 1);
 
-
-
-    // if (index > -1) {
-    //   if (dot(normalize(v1),normalize(triangles[index].normal)) == 0) {
-    //     continue;
-    //   }
-    // }
-
     if (x[0] < closestIntersection.distance && x[0]>0 && x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
       closestIntersection.distance = x[0];
       closestIntersection.position = r;
@@ -247,7 +229,6 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     }
   }
   if (closestIntersection.distance == maxFloat) {
-    // printf("NOOOO HIIIIT!\n");
     return false;
   }
 
