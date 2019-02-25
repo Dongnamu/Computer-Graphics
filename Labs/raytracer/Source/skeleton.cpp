@@ -365,16 +365,12 @@ void processPart(Camera &camera, Light &light, Options &options, float &focalDis
       vec3 mainShadow(0,0,0);
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
 
-      if (ClosestIntersection(camera.position, d, triangles, intersect)) {
         // total_light_power += DirectLight(light, intersect, triangles);
-        vec3 blurrColor = focusGaussian(camera, light, focalDistance, aperature, triangles, row, col, normalize(d));
+      vec3 blurrColor = focusGaussian(camera, light, focalDistance, aperature, triangles, row, col, normalize(d));
 
-        total_color = blurrColor;
+      total_color = blurrColor;
 
         // division += 1;
-      } else {
-        printf("Pixel: %d %d is not crossed\n", row, col);
-      }
 
       pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = options.indirectLight;
       pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = total_color;
