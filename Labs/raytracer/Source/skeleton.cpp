@@ -18,7 +18,7 @@ using glm::mat4;
 #define MASTER 0
 #define SCREEN_WIDTH 300
 #define SCREEN_HEIGHT 300
-#define FULLSCREEN_MODE false
+#define FULLSCREEN_MODE true
 #define PI 3.14159265359
 
 
@@ -412,7 +412,6 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
       // float angle = acos(dot(normalize(triangles[i].normal),normalize(d)))/abs(dot(normalize(triangles[i].normal),normalize(d)));
       // if (angle >=  1.5708) continue;
     }
-
     Triangle triangle = triangles[i];
     vec4 v0 = triangle.v0;
     vec4 v1 = triangle.v1;
@@ -426,29 +425,35 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
 
     mat3 A( -direc, e1, e2);
 
-    vec3 x = glm::inverse( A ) * b;
+    float detA = glm::determinant(A);
 
-    vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
-    vec4 r = vec4(m.x, m.y, m.z, 1);
+    mat3 T(b, e1, e2);
 
+    float detT = glm::determinant(T);
 
-    // if (index > -1) {
-    //   if (dot(normalize(v1),normalize(triangles[index].normal)) == 0) {
-    //     continue;
-    //   }
-    // }
+    float t = detT / detA;
 
+    if (t < closestIntersection.distance && t > 0) {
+      mat3 U(-direc, b, e2);
+      mat3 V(-direc, e1, b);
+      float detU = glm::determinant(U);
+      float detV = glm::determinant(V);
 
-    if (x[0] < closestIntersection.distance && x[0]>0 && x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
-      closestIntersection.distance = x[0];
-      closestIntersection.position = r;
-      closestIntersection.triangleIndex = i;
+      float u = detU / detA;
+      float v = detV / detA;
+
+      if (u >= 0 && v >= 0 && u + v <= 1) {
+        vec3 m = vec3(v0.x, v0.y, v0.z) + u*e1 + v*e2;
+        vec4 r = vec4(m.x, m.y, m.z, 1);
+
+        closestIntersection.distance = t;
+        closestIntersection.position = r;
+        closestIntersection.triangleIndex = i;
+      }
     }
   }
-  if (closestIntersection.distance == maxFloat) {
-    return false;
-  }
 
+  if (closestIntersection.distance == maxFloat) return false;
   return true;
 }
 
