@@ -185,7 +185,7 @@ void Update(vector<vector<vec3>>& trails)
     for (uint i = 0; i < trails[trail].size(); i++){
       trails[trail][i].z = (trails[trail][i].z - (0.0005*dt));
       if(trails[trail][i].z <= 0){
-        trails[trail][i].z += 1;
+        // trails[trail][i].z += 1;
       }
     }
   }
