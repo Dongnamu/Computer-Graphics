@@ -108,6 +108,56 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
   }
 }
 
+// void ComputePolygonRows(const vector<ivec2>& vertexPixels, vector<ivec2>& leftPixels, vector<ivec2>& rightPixels) {
+//   int largestVal = -numeric_limits<int>::max();;
+//   int smallestVal = numeric_limits<int>::max();;
+//
+//   int largeIndex;
+//   int smallIndex;
+//   int otherIndex;
+//
+//   for (int v = 0; v < 3; ++v){
+//     if (vertexPixels[v][1] > largestVal) {
+//       largestVal = vertexPixels[v][1];
+//       largeIndex = v;
+//     }
+//     if (vertexPixels[v][1] < smallestVal) {
+//       smallestVal = vertexPixels[v][1];
+//       smallIndex = v;
+//     }
+//   }
+//
+//   for (int i = 0; i < 3; i++) {
+//     if (i != largeIndex && i != smallIndex){
+//       otherIndex = i;
+//       break;
+//     }
+//   }
+//   int rows = largestVal - smallestVal + 1;
+//
+//   for (int i = 0; i < rows; i++){
+//     leftPixels.push_back(ivec2(+numeric_limits<int>::max(),0));
+//     rightPixels.push_back(ivec2(-numeric_limits<int>::max(),0));
+//   }
+//
+//   int toprows = vertexPixels[largeIndex].y  - vertexPixels[otherIndex].y + 1;
+//   int botrows = vertexPixels[otherIndex].y  - vertexPixels[smallIndex].y + 1;
+//
+//
+//   vector<ivec2> edge1(toprows);
+//   vector<ivec2> edge2(botrows);
+//   vector<ivec2> bigEdge(rows);
+//
+//   Interpolate(vertexPixels[otherIndex],vertexPixels[largeIndex], edge1);
+//   Interpolate(vertexPixels[smallIndex], vertexPixels[otherIndex], edge2);
+//   Interpolate(vertexPixels[smallIndex],vertexPixels[largeIndex], bigEdge);
+//
+//   for (int i = 0; i < rows; i++){
+//     if (i < botrows) leftPixels[i] = edge2[i];
+//     if (i >= botrows) leftPixels[i] = edge1[i-botrows+1];
+//     if (rightPixels[i].x <= edge2[i].x ) rightPixels[i] = bigEdge[i];
+//   }
+// }
 void ComputePolygonRows(const vector<ivec2>& vertexPixels, vector<ivec2>& leftPixels, vector<ivec2>& rightPixels) {
   int maxY = -numeric_limits<int>::max();
   int minY = numeric_limits<int>::max();
@@ -135,16 +185,21 @@ void ComputePolygonRows(const vector<ivec2>& vertexPixels, vector<ivec2>& leftPi
       midY = vertexPixels[i].y;
     }
   }
+
   int numberOfRows = maxY - minY + 1;
   int numberOfhigh2mid = maxY - midY + 1;
   int numberOfmid2low = midY - minY + 1;
 
-  if (numberOfRows <= 25) {
-    printf("Longest = %d\n", numberOfRows);
-    for (int i = 0; i < 3; i++) {
-      printf("x: %d, y: %d\n", vertexPixels[i].x, vertexPixels[i].y);
-    }
-  }
+  // if (maxY == midY) {
+  //   printf("max x: %d max y:%d mid x: %d, mid y: %d\n", highest.x, highest.y, midPoint.x, midPoint.y);
+  // }
+
+  // if (numberOfRows <= 25) {
+  //   printf("Longest = %d\n", numberOfRows);
+  //   for (int i = 0; i < 3; i++) {
+  //     printf("x: %d, y: %d\n", vertexPixels[i].x, vertexPixels[i].y);
+  //   }
+  // }
 
   leftPixels.resize(numberOfRows);
   rightPixels.resize(numberOfRows);
@@ -166,28 +221,41 @@ void ComputePolygonRows(const vector<ivec2>& vertexPixels, vector<ivec2>& leftPi
   Interpolate(midPoint, highest, mid2high);
   Interpolate(lowest, midPoint, low2mid);
 
-  if (longest[numberOfmid2low - 1].x < low2mid[numberOfmid2low - 1].x) {
+
+  if (longest[numberOfmid2low - 1].x < mid2high[0].x) {
     is_left = true;
   }
 
   if (is_left) {
     leftPixels = longest;
 
-    for (int i = 0; i < numberOfmid2low; i++) {
-      rightPixels[i] = low2mid[i];
+    if (midY == maxY) {
+      rightPixels = low2mid;
+    } else {
+
+      for (int i = 0; i < numberOfmid2low; i++) {
+        rightPixels[i] = low2mid[i];
+      }
+
+      for (int i = numberOfmid2low + 1; i < numberOfRows + 1; i++) {
+        rightPixels[i - 1] = mid2high[i - numberOfmid2low];
+      }
     }
 
-    for (int i = numberOfmid2low + 1; i < numberOfRows + 1; i++) {
-      rightPixels[i - 1] = mid2high[i - numberOfmid2low];
-    }
   } else {
     rightPixels = longest;
-    for (int i = 0; i < numberOfmid2low; i++) {
-      leftPixels[i] = low2mid[i];
-    }
 
-    for (int i = numberOfmid2low + 1; i < numberOfRows + 1; i++) {
-      leftPixels[i - 1] = mid2high[i - numberOfmid2low];
+    if (midY == maxY) {
+      leftPixels = low2mid;
+    } else {
+      for (int i = 0; i < numberOfmid2low; i++) {
+        leftPixels[i] = low2mid[i];
+      }
+
+      for (int i = numberOfmid2low + 1; i < numberOfRows + 1; i++) {
+        leftPixels[i - 1] = mid2high[i - numberOfmid2low];
+      }
+
     }
   }
 
