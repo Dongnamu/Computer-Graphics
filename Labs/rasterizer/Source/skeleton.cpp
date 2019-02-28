@@ -15,8 +15,8 @@ using glm::mat4;
 using glm::ivec2;
 
 
-#define SCREEN_WIDTH 500
-#define SCREEN_HEIGHT 500
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
 #define FULLSCREEN_MODE false
 #define PI 3.14159
 #define ROWS 500
@@ -60,6 +60,8 @@ void DrawLineSDL(screen* surface, ivec2 a, ivec2 b, vec3 color);
 void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices);
 void ComputePolygonRows(const vector<ivec2>& vertexPixels, vector<ivec2>& leftPixels, vector<ivec2>& rightPixels);
 void Interpolate(ivec2 a, ivec2 b, vector<ivec2>& result);
+void DrawRows( screen* screen, const vector<ivec2>& leftPixels, const vector<ivec2>& rightPixels, vec3 color);
+void DrawPolygon( screen* screen, const vector<vec4>& vertices, vec3 color);
 
 int main( int argc, char* argv[] )
 {
@@ -67,24 +69,6 @@ int main( int argc, char* argv[] )
   screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
   vector<Triangle> triangles;
 
-  vector<ivec2> vertexPixels(3);
-  vertexPixels[0] = ivec2(10, 5);
-  vertexPixels[1] = ivec2( 5,10);
-  vertexPixels[2] = ivec2(15,15);
-  vector<ivec2> leftPixels;
-  vector<ivec2> rightPixels;
-
-  ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
-
-  for( uint row=0; row<leftPixels.size(); ++row )
-  {
-    cout << "Start: ("
-    << leftPixels[row].x << ","
-    << leftPixels[row].y << "). "
-    << "End: ("
-    << rightPixels[row].x << ","
-    << rightPixels[row].y << "). " << endl;
-  }
   LoadTestModel(triangles);
 
   while( !escape )
@@ -118,6 +102,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
     //   PutPixelSDL(screen, projPos.x, projPos.y, color);
     // }
 
+    DrawPolygon(screen, vertices, triangles[i].color);
     DrawPolygonEdges(screen, vertices);
 
   }
@@ -150,10 +135,16 @@ void ComputePolygonRows(const vector<ivec2>& vertexPixels, vector<ivec2>& leftPi
       midY = vertexPixels[i].y;
     }
   }
-
   int numberOfRows = maxY - minY + 1;
   int numberOfhigh2mid = maxY - midY + 1;
   int numberOfmid2low = midY - minY + 1;
+
+  if (numberOfRows <= 25) {
+    printf("Longest = %d\n", numberOfRows);
+    for (int i = 0; i < 3; i++) {
+      printf("x: %d, y: %d\n", vertexPixels[i].x, vertexPixels[i].y);
+    }
+  }
 
   leftPixels.resize(numberOfRows);
   rightPixels.resize(numberOfRows);
@@ -174,10 +165,6 @@ void ComputePolygonRows(const vector<ivec2>& vertexPixels, vector<ivec2>& leftPi
   Interpolate(lowest, highest, longest);
   Interpolate(midPoint, highest, mid2high);
   Interpolate(lowest, midPoint, low2mid);
-
-  for (int i = 0; i < numberOfhigh2mid; i++) {
-    printf("x: %d, y: %d\n", mid2high[i].x, mid2high[i].y);
-  }
 
   if (longest[numberOfmid2low - 1].x < low2mid[numberOfmid2low - 1].x) {
     is_left = true;
@@ -221,13 +208,41 @@ void Interpolate(ivec2 a, ivec2 b, vector<ivec2>& result){
     current += step;
   }
 }
+
+void DrawRows(screen* screen, const vector<ivec2>& leftPixels, const vector<ivec2>& rightPixels, vec3 color) {
+
+  for (uint i = 0; i < leftPixels.size(); i++) {
+      int left = leftPixels[i].x;
+      int right = rightPixels[i].x;
+
+      for (int j = left; j < right; j++) {
+        PutPixelSDL(screen, j, leftPixels[i].y, color);
+      }
+  }
+}
+
+void DrawPolygon(screen* screen, const vector<vec4>& vertices, vec3 color) {
+  int V = vertices.size();
+
+  vector<ivec2> vertexPixels(V);
+
+  for (int i = 0; i < V; i++) {
+    VertexShader(vertices[i], vertexPixels[i]);
+  }
+
+  vector<ivec2> leftPixels;
+  vector<ivec2> rightPixels;
+  ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
+  DrawRows(screen, leftPixels, rightPixels, color);
+}
+
 void DrawLineSDL(screen* surface, ivec2 a, ivec2 b, vec3 color){
   ivec2 delta = glm::abs(a-b);
   int pixels = glm::max(delta.x, delta.y) + 1;
   vector<ivec2> line(pixels);
   Interpolate(a, b, line);
   for (int i = 0; i<pixels; i++){
-    PutPixelSDL(surface, line[i].x, line[i].y, color);;
+    PutPixelSDL(surface, line[i].x, line[i].y, color);
   }
 }
 
