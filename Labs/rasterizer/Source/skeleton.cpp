@@ -37,7 +37,7 @@ struct Camera{
 struct Pixel {
   int x;
   int y;
-  // float zinv;
+  float zinv;
 };
 
 Camera camera = {
@@ -46,6 +46,9 @@ Camera camera = {
   // .center = vec3(0.003724, 0.929729, 0.07459)
   .center = vec3(0,0,0)
 };
+
+float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
+
 
 
 
@@ -115,6 +118,12 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 {
   /* Clear buffer */
   memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+  for (int y = 0; y < SCREEN_HEIGHT; y++) {
+    for (int x = 0; x < SCREEN_WIDTH; x++) {
+      depthBuffer[y][x] = 0.0f;
+    }
+  }
+
 
   for (uint32_t i=0; i<triangles.size(); ++i){
     vector<vec4> vertices(3);
@@ -130,7 +139,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
 void VertexShader(const vec4& v, Pixel& p){
   vec4 n = camera.basis *(v - camera.position);
-  // p.zinv = 1/n[2];
+  p.zinv = 1/n[2];
   p.x = focal_length*(n[0]/n[2]) + SCREEN_WIDTH/2;
   p.y = focal_length*(n[1]/n[2]) + SCREEN_HEIGHT/2;
 }
@@ -140,16 +149,19 @@ void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
 
   float stepX = ((b.x - a.x)/float(max(N-1, 1)));
   float stepY = ((b.y - a.y)/float(max(N-1, 1)));
+  float stepZ = abs(b.zinv - a.zinv);
 
   float currentX = a.x;
   float currentY = a.y;
+  float currentZ = a.zinv;
 
   for (int i=0; i<N; i++){
     result[i].x = currentX;
     result[i].y = currentY;
+    result[i].zinv = currentZ;
     currentX += stepX;
     currentY += stepY;
-    // current.zinv += step.zinv;
+    currentZ += stepZ;
     }
 }
 
@@ -185,7 +197,7 @@ void ComputePolygonRows(const vector<Pixel>& vertexPixels, vector<Pixel>& leftPi
 
   for (int i = 0; i < rows; i++){
     leftPixels[i].x = +numeric_limits<int>::max();
-    rightPixels[i].x = -numeric_limits<int>::max(),0;
+    rightPixels[i].x = -numeric_limits<int>::max();
   }
 
   int toprows = vertexPixels[largeIndex].y  - vertexPixels[otherIndex].y + 1;
@@ -246,12 +258,19 @@ mat4 generateRotation(vec3 a){
 
 void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 color) {
 
-  for (uint i = 0; i < leftPixels.size(); i++) {
-      int left = leftPixels[i].x;
-      int right = rightPixels[i].x;
-
-      for (int j = left; j < right; j++) {
-        PutPixelSDL(screen, j, leftPixels[i].y, color);
+  for (uint row = 0; row < leftPixels.size(); row++) {
+    if (leftPixels[row].y != rightPixels[row].y) printf("SOMETHING WENT WRONG\n");
+      vector<Pixel> drawRow;
+      int distace = abs(rightPixels[row].x - leftPixels[row].x+1);
+      drawRow.resize(distace);
+      Interpolate(leftPixels[row], rightPixels[row], drawRow);
+      for (uint col = 0; col < drawRow.size(); col++){
+        if(drawRow[col].zinv > depthBuffer[row][drawRow[col].x]) {
+          depthBuffer[row][drawRow[col].x] = drawRow[col].zinv;
+          PutPixelSDL(screen,  drawRow[col].x, drawRow[col].y, color);
+        } else {
+          if (drawRow[col].zinv <= 0) printf("ERRO DEPTH: %f\n", drawRow[col].zinv);
+        }
       }
   }
 }
