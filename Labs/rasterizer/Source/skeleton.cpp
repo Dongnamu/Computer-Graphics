@@ -38,19 +38,27 @@ struct Pixel {
   int x;
   int y;
   float zinv;
-  vec3 illumination;
+  vec4 pos3d;
 };
 
 struct Vertex {
   vec4 position;
-  vec4 normal;
-  vec3 reflectance;
 };
 
 struct Light {
   vec4 position;
   vec3 color;
   vec3 indirectLight;
+};
+
+struct Current {
+  vec4 currentNormal;
+  vec3 currentReflectance;
+};
+
+Current current = {
+  .currentNormal = vec4(0,0,0,0),
+  .currentReflectance = vec3(0,0,0)
 };
 
 Camera camera = {
@@ -84,9 +92,9 @@ void VertexShader(const vec4& v, Pixel& p, Vertex& vertex);
 // void DrawLineSDL(screen* surface, ivec2 a, ivec2 b, vec3 color);
 // void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices);
 void ComputePolygonRows(const vector<Pixel>& vertextPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
-void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 color);
-void DrawPolygon( screen* screen, const vector<vec4>& vertices, vec3 color, vector<Vertex>& vertex);
-void PixelShader( screen* screen, const Pixel& p, vec3 color);
+void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
+void DrawPolygon( screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex);
+void PixelShader( screen* screen, const Pixel& p);
 
 
 int main( int argc, char* argv[] )
@@ -128,16 +136,10 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
     vertices[1] = triangles[i].v1;
     vertices[2] = triangles[i].v2;
 
+    current.currentNormal = triangles[i].normal;
+    current.currentReflectance = triangles[i].color;
 
-    vertex[0].normal = normalize(triangles[i].normal);
-    vertex[1].normal = normalize(triangles[i].normal);
-    vertex[2].normal = normalize(triangles[i].normal);
-
-    vertex[0].reflectance = triangles[i].color;
-    vertex[1].reflectance = triangles[i].color;
-    vertex[2].reflectance = triangles[i].color;
-
-    DrawPolygon(screen, vertices, triangles[i].color, vertex);
+    DrawPolygon(screen, vertices, vertex);
     // DrawPolygonEdges(screen, vertices);
 
   }
@@ -148,17 +150,7 @@ void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
   p.zinv = 1/vertex.position[2];
   p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
   p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
-
-  float r = glm::distance(light.position, v);
-  float area = 4 * PI * pow(r, 2);
-
-  vec4 normal = vertex.normal;
-  vec4 direction = normalize(light.position - v);
-
-  float r_n  = dot(direction, normal);
-
-  p.illumination = ((light.color * max((r_n), 0.f))/area) += light.indirectLight;
-
+  p.pos3d = v;
 }
 
 void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
@@ -167,22 +159,22 @@ void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
   float stepX = (b.x - a.x)/float(max(N-1, 1));
   float stepY = (b.y - a.y)/float(max(N-1, 1));
   float stepZ = (b.zinv - a.zinv)/float(max(N-1, 1));
-  vec3 stepIllumination = (b.illumination - a.illumination)/float(max(N-1, 1));
+  vec4 stepPos = (b.pos3d - a.pos3d)/float(max(N-1, 1));
 
   float currentX = a.x;
   float currentY = a.y;
   float currentZ = a.zinv;
-  vec3 currentIllumination = a.illumination;
+  vec4 currentStepPos = a.pos3d;
 
   for (int i=0; i<N; i++){
     result[i].x = currentX;
     result[i].y = currentY;
     result[i].zinv = currentZ;
-    result[i].illumination = currentIllumination;
+    result[i].pos3d = currentStepPos;
     currentX += stepX;
     currentY += stepY;
     currentZ += stepZ;
-    currentIllumination += stepIllumination;
+    currentStepPos += stepPos;
   }
 }
 
@@ -310,7 +302,7 @@ mat4 generateRotation(vec3 a){
   return (mat4(uno, dos, tres, cuatro));
 }
 
-void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 color) {
+void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels) {
 
   for (uint i = 0; i < leftPixels.size(); i++) {
     int left = leftPixels[i].x;
@@ -328,7 +320,7 @@ void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixe
     for (int j = left; j < right; j++) {
       if (j >= 0 && j < SCREEN_WIDTH) {
         if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
-          PixelShader(screen, drawRow[k], color);
+          PixelShader(screen, drawRow[k]);
         }
       }
       k++;
@@ -336,7 +328,7 @@ void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixe
   }
 }
 
-void PixelShader(screen* screen, const Pixel& p, vec3 color) {
+void PixelShader(screen* screen, const Pixel& p) {
 
   int x = p.x;
   int y = p.y;
@@ -344,14 +336,21 @@ void PixelShader(screen* screen, const Pixel& p, vec3 color) {
   if (p.zinv >= 0) {
     if (depthBuffer[y][x] < p.zinv) {
       depthBuffer[y][x] = p.zinv;
-      // printf("illumination: %f, %f, %f\n", p.illumination[0], p.illumination[1],p.illumination[2]);
-      // printf("Color: %f, %f, %f\n", color[0], color[1], color[2]);
-      PutPixelSDL(screen, x, y, color * p.illumination);
+      float r = glm::distance(light.position, p.pos3d);
+      float area = 4 * PI * pow(r, 2);
+
+      vec4 normal = current.currentNormal;
+      vec4 direction = normalize(light.position - p.pos3d);
+
+      float r_n  = dot(direction, normal);
+
+      vec3 illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      PutPixelSDL(screen, x, y, current.currentReflectance * illumination);
     }
   }
 }
 
-void DrawPolygon(screen* screen, const vector<vec4>& vertices, vec3 color, vector<Vertex>& vertex) {
+void DrawPolygon(screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex) {
   int V = vertices.size();
 
   vector<Pixel> vertexPixels(V);
@@ -363,7 +362,7 @@ void DrawPolygon(screen* screen, const vector<vec4>& vertices, vec3 color, vecto
   vector<Pixel> leftPixels;
   vector<Pixel> rightPixels;
   ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
-  DrawRows(screen, leftPixels, rightPixels, color);
+  DrawRows(screen, leftPixels, rightPixels);
 }
 
 
@@ -449,18 +448,18 @@ void Update()
         if (is_lookAt) is_lookAt = false;
         else is_lookAt = true;
         break;
-      // case SDLK_u:
-      //   light.position += vec4(0, 0, 0.1, 0);
-      //   break;
-      // case SDLK_j:
-      //   light.position += vec4(0,0,-0.1,0);
-      //   break;
-      // case SDLK_h:
-      //   light.position += vec4(-0.1, 0, 0, 0);
-      //   break;
-      // case SDLK_k:
-      //   light.position += vec4(0.1, 0, 0, 0);
-      //   break;
+      case SDLK_u:
+        light.position += vec4(0, 0, 0.1, 0);
+        break;
+      case SDLK_j:
+        light.position += vec4(0,0,-0.1,0);
+        break;
+      case SDLK_h:
+        light.position += vec4(-0.1, 0, 0, 0);
+        break;
+      case SDLK_k:
+        light.position += vec4(0.1, 0, 0, 0);
+        break;
       default:
         break;
     }
