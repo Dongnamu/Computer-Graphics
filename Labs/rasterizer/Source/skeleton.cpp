@@ -159,18 +159,18 @@ void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
   float stepX = (b.x - a.x)/float(max(N-1, 1));
   float stepY = (b.y - a.y)/float(max(N-1, 1));
   float stepZ = (b.zinv - a.zinv)/float(max(N-1, 1));
-  vec4 stepPos = (b.pos3d - a.pos3d)/float(max(N-1, 1));
+  vec4 stepPos = ((b.pos3d * b.zinv) - (a.pos3d * a.zinv))/float(max(N-1, 1));
 
   float currentX = a.x;
   float currentY = a.y;
   float currentZ = a.zinv;
-  vec4 currentStepPos = a.pos3d;
+  vec4 currentStepPos = a.pos3d * a.zinv;
 
   for (int i=0; i<N; i++){
     result[i].x = currentX;
     result[i].y = currentY;
     result[i].zinv = currentZ;
-    result[i].pos3d = currentStepPos;
+    result[i].pos3d = (currentStepPos / result[i].zinv);
     currentX += stepX;
     currentY += stepY;
     currentZ += stepZ;
@@ -374,7 +374,7 @@ void Update()
   float dt = float(t2-t);
   t = t2;
   /*Good idea to remove this*/
-  // std::cout << "Render time: " << dt << " ms." << std::endl;
+  std::cout << "Render time: " << dt << " ms." << std::endl;
   /* Update variables*/
   SDL_Event e;
   mat4 translation(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
