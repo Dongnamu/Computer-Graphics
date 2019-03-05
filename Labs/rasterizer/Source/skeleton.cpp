@@ -44,7 +44,7 @@ struct Pixel {
 struct Vertex {
   vec4 position;
   vec4 normal;
-  vec2 reflectance;
+  vec3 reflectance;
 };
 
 struct Light {
@@ -62,7 +62,7 @@ Camera camera = {
 
 Light light = {
   .position = vec4(0, -0.5, -0.7, 1.0),
-  .color = 1.1f * vec3(1, 1, 1),
+  .color = 14.0f * vec3(1, 1, 1),
   .indirectLight = 0.5f * vec3(1, 1, 1)
 };
 
@@ -128,9 +128,15 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
     vertices[1] = triangles[i].v1;
     vertices[2] = triangles[i].v2;
 
+
     vertex[0].normal = normalize(triangles[i].normal);
     vertex[1].normal = normalize(triangles[i].normal);
     vertex[2].normal = normalize(triangles[i].normal);
+
+    vertex[0].reflectance = triangles[i].color;
+    vertex[1].reflectance = triangles[i].color;
+    vertex[2].reflectance = triangles[i].color;
+
     DrawPolygon(screen, vertices, triangles[i].color, vertex);
     // DrawPolygonEdges(screen, vertices);
 
@@ -142,6 +148,17 @@ void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
   p.zinv = 1/vertex.position[2];
   p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
   p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
+
+  float r = glm::distance(light.position, v);
+  float area = 4 * PI * pow(r, 2);
+
+  vec4 normal = vertex.normal;
+  vec4 direction = normalize(light.position - v);
+
+  float r_n  = dot(direction, normal);
+
+  p.illumination = ((light.color * max((r_n), 0.f))/area) += light.indirectLight;
+
 }
 
 void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
@@ -150,18 +167,22 @@ void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
   float stepX = (b.x - a.x)/float(max(N-1, 1));
   float stepY = (b.y - a.y)/float(max(N-1, 1));
   float stepZ = (b.zinv - a.zinv)/float(max(N-1, 1));
+  vec3 stepIllumination = (b.illumination - a.illumination)/float(max(N-1, 1));
 
   float currentX = a.x;
   float currentY = a.y;
   float currentZ = a.zinv;
+  vec3 currentIllumination = a.illumination;
 
   for (int i=0; i<N; i++){
     result[i].x = currentX;
     result[i].y = currentY;
     result[i].zinv = currentZ;
+    result[i].illumination = currentIllumination;
     currentX += stepX;
     currentY += stepY;
     currentZ += stepZ;
+    currentIllumination += stepIllumination;
   }
 }
 
@@ -323,7 +344,9 @@ void PixelShader(screen* screen, const Pixel& p, vec3 color) {
   if (p.zinv >= 0) {
     if (depthBuffer[y][x] < p.zinv) {
       depthBuffer[y][x] = p.zinv;
-      PutPixelSDL(screen, x, y, color);
+      // printf("illumination: %f, %f, %f\n", p.illumination[0], p.illumination[1],p.illumination[2]);
+      // printf("Color: %f, %f, %f\n", color[0], color[1], color[2]);
+      PutPixelSDL(screen, x, y, color * p.illumination);
     }
   }
 }
@@ -352,7 +375,7 @@ void Update()
   float dt = float(t2-t);
   t = t2;
   /*Good idea to remove this*/
-  std::cout << "Render time: " << dt << " ms." << std::endl;
+  // std::cout << "Render time: " << dt << " ms." << std::endl;
   /* Update variables*/
   SDL_Event e;
   mat4 translation(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
