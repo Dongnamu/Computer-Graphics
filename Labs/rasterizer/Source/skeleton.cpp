@@ -5,6 +5,8 @@
 #include "TestModelH.h"
 #include <stdint.h>
 #include <limits.h>
+#include <unordered_map>
+#include <math.h>
 
 using namespace std;
 using glm::vec3;
@@ -56,6 +58,32 @@ struct Current {
   vec3 currentReflectance;
 };
 
+struct Direction {
+  float x;
+  float y;
+  float z;
+};
+
+struct Vec4 {
+  float x;
+  float y;
+  float z;
+  float w;
+};
+
+struct Lightpixel {
+  int x;
+  int y;
+  float zinv;
+  Vec4 pos3d;
+};
+
+
+struct lightDistance {
+  Lightpixel p;
+  float distance;
+};
+
 Current current = {
   .currentNormal = vec4(0,0,0,0),
   .currentReflectance = vec3(0,0,0)
@@ -74,9 +102,9 @@ Light light = {
   .indirectLight = 0.5f * vec3(1, 1, 1)
 };
 
-float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
-
-
+int depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
+float illuminationBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
+// unordered_map<Direction, lightDistance> shadowMap;
 
 // vec4 cameraPos(0, 0, -2, 1.0);
 bool escape = false;
@@ -95,7 +123,7 @@ void ComputePolygonRows(const vector<Pixel>& vertextPixels, vector<Pixel>& leftP
 void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
 void DrawPolygon( screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex);
 void PixelShader( screen* screen, const Pixel& p);
-
+void calLightDepth(const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
 
 int main( int argc, char* argv[] )
 {
@@ -124,7 +152,8 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
   for (int y = 0; y < SCREEN_HEIGHT; y++) {
     for (int x = 0; x < SCREEN_WIDTH; x++) {
-      depthBuffer[y][x] = 0.0f;
+      depthBuffer[y][x] = 0;
+      illuminationBuffer[y][x] = 0.0f;
     }
   }
 
@@ -138,7 +167,6 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
     current.currentNormal = triangles[i].normal;
     current.currentReflectance = triangles[i].color;
-
     DrawPolygon(screen, vertices, vertex);
     // DrawPolygonEdges(screen, vertices);
 
@@ -146,11 +174,17 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 }
 
 void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
+  vec4 fromLight = v - light.position;
   vertex.position = camera.basis *(v - camera.position);
-  p.zinv = 1/vertex.position[2];
-  p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
-  p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
-  p.pos3d = v;
+  if (vertex.position[2] <= (camera.position[2] - focal_length)) {
+    p.zinv = -1;
+  } else {
+    p.zinv = 1/vertex.position[2];
+    p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
+    p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
+    p.pos3d = v;
+
+  }
 }
 
 void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
@@ -317,35 +351,73 @@ void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixe
 
     Interpolate(depth_left, depth_right, drawRow);
     int k = 0;
-    for (int j = left; j < right; j++) {
-      if (j >= 0 && j < SCREEN_WIDTH) {
-        if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
-          PixelShader(screen, drawRow[k]);
+
+    if (drawRow[k].zinv >= 0) {
+      for (int j = left; j < right; j++) {
+        if (j >= 0 && j < SCREEN_WIDTH) {
+          if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
+            PixelShader(screen, drawRow[k]);
+          }
         }
+        k++;
       }
-      k++;
     }
   }
 }
+
 
 void PixelShader(screen* screen, const Pixel& p) {
 
   int x = p.x;
   int y = p.y;
+  int z = p.zinv * pow(2, 16);
 
-  if (p.zinv >= 0) {
-    if (depthBuffer[y][x] < p.zinv) {
-      depthBuffer[y][x] = p.zinv;
-      float r = glm::distance(light.position, p.pos3d);
-      float area = 4 * PI * pow(r, 2);
+  if (depthBuffer[y][x] < z) {
+    depthBuffer[y][x] = z;
 
-      vec4 normal = current.currentNormal;
-      vec4 direction = normalize(light.position - p.pos3d);
+    float r = glm::distance(light.position, p.pos3d);
+    float area = 4 * PI * pow(r, 2);
 
-      float r_n  = dot(direction, normal);
+    vec4 normal = current.currentNormal;
+    vec4 direction = normalize(light.position - p.pos3d);
 
-      vec3 illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
-      PutPixelSDL(screen, x, y, current.currentReflectance * illumination);
+    float r_n  = dot(direction, normal);
+
+    // vec3 illumination = ((light.color * max((r_n), 0.f))/area);
+    vec3 illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+    // PutPixelSDL(screen, x, y, current.currentReflectance * illumination);
+    PutPixelSDL(screen, x, y, illumination);
+  }
+}
+
+void calLightDepth(const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels) {
+  for (uint i = 0; i < leftPixels.size(); i++) {
+    int left = leftPixels[i].x;
+    int right = rightPixels[i].x;
+
+    Pixel depth_left = leftPixels[i];
+    Pixel depth_right = rightPixels[i];
+
+    int distance = abs(right - left) + 1;
+    vector<Pixel> depthRow(distance);
+    // drawRow.resize(distance);
+
+    Interpolate(depth_left, depth_right, depthRow);
+    int k = 0;
+
+    for (int j = left; j < right; j++) {
+      if (j >= 0 && j < SCREEN_WIDTH) {
+        if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
+          // float r = glm::distance(light.position, depthRow[k].pos3d);
+
+          // float rInv = 1/r;
+
+          // if (illuminationBuffer[leftPixels[i].y][j] < rInv) {
+            // lightDepth
+          // }
+        }
+      }
+      k++;
     }
   }
 }
@@ -362,6 +434,7 @@ void DrawPolygon(screen* screen, const vector<vec4>& vertices, vector<Vertex>& v
   vector<Pixel> leftPixels;
   vector<Pixel> rightPixels;
   ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
+  calLightDepth(leftPixels, rightPixels);
   DrawRows(screen, leftPixels, rightPixels);
 }
 
