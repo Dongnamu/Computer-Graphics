@@ -30,7 +30,10 @@ float yaw = 2 * PI / 180;
 float focal_length = SCREEN_HEIGHT / 2;
 
 
-float depth = 2;
+float depth = 1;
+
+float epsilon = 0.1;
+
 
 struct Camera{
   vec4 position;
@@ -180,7 +183,6 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
   }
 }
-float epsilon = 3;
 
 void updateClippers() {
 
@@ -441,6 +443,7 @@ void PixelShader(screen* screen, const Pixel& p) {
       float r = glm::distance(light.position, p.pos3d);
       float area = 4 * PI * pow(r, 2);
 
+
       vec4 normal = current.currentNormal;
       vec4 direction = normalize(light.position - p.pos3d);
 
@@ -551,12 +554,10 @@ void Update()
         else is_lookAt = true;
         break;
       case SDLK_u:
-        // light.position += vec4(0, 0, 0.1, 0);
-        epsilon += 0.5;
+        light.position += vec4(0, 0, 0.1, 0);
         break;
       case SDLK_j:
-        // light.position += vec4(0,0,-0.1,0);
-        epsilon -= 0.5;
+        light.position += vec4(0,0,-0.1,0);
         break;
       case SDLK_h:
         light.position += vec4(-0.1, 0, 0, 0);
