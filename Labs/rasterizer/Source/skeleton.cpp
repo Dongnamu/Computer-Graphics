@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <limits.h>
 
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
+
 using namespace std;
 using glm::vec3;
 using glm::mat3;
@@ -15,9 +18,9 @@ using glm::mat4;
 using glm::ivec2;
 
 
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 1080
-#define FULLSCREEN_MODE false
+#define SCREEN_WIDTH 200
+#define SCREEN_HEIGHT 200
+#define FULLSCREEN_MODE true
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -27,6 +30,7 @@ float yaw = 2 * PI / 180;
 float focal_length = SCREEN_HEIGHT / 2;
 
 
+float depth = 2;
 
 struct Camera{
   vec4 position;
@@ -56,6 +60,15 @@ struct Current {
   vec3 currentReflectance;
 };
 
+struct Clipper {
+  vec4 leftNormal;
+  vec4 rightNormal;
+  vec4 topNormal;
+  vec4 botNormal;
+  vec4 nearNormal;
+  vec4 nearPoint;
+};
+
 Current current = {
   .currentNormal = vec4(0,0,0,0),
   .currentReflectance = vec3(0,0,0)
@@ -73,6 +86,17 @@ Light light = {
   .color = 14.0f * vec3(1, 1, 1),
   .indirectLight = 0.5f * vec3(1, 1, 1)
 };
+
+Clipper clipper = {
+  .leftNormal = vec4(0,0,0,0),
+  .rightNormal = vec4(0,0,0,0),
+  .topNormal = vec4(0,0,0,0),
+  .botNormal = vec4(0,0,0,0),
+  .nearNormal = vec4(0,0,0,0),
+  .nearPoint= vec4(0,0,0, 0)
+};
+
+
 
 float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 
@@ -95,6 +119,10 @@ void ComputePolygonRows(const vector<Pixel>& vertextPixels, vector<Pixel>& leftP
 void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
 void DrawPolygon( screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex);
 void PixelShader( screen* screen, const Pixel& p);
+mat4 generateRotation(vec3 a);
+void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles);
+bool isPositive(Triangle triangle);
+void updateClippers();
 
 
 int main( int argc, char* argv[] )
@@ -104,10 +132,17 @@ int main( int argc, char* argv[] )
   vector<Triangle> triangles;
   LoadTestModel(triangles);
 
+  int size = triangles.size();
+
+  // camera.position = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), light.position) * camera.position;
+  // camera.basis =  generateRotation(vec3((90 * PI / 180), 0, 0)) * camera.basis;
   while( !escape )
     {
+      vector<Triangle> clippedTriangles;
       Update();
-      Draw(screen, triangles);
+      updateClippers();
+      ClipTriangles(triangles, clippedTriangles);
+      Draw(screen, clippedTriangles);
       SDL_Renderframe(screen);
     }
 
@@ -139,11 +174,78 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
     current.currentNormal = triangles[i].normal;
     current.currentReflectance = triangles[i].color;
 
+
     DrawPolygon(screen, vertices, vertex);
     // DrawPolygonEdges(screen, vertices);
 
   }
 }
+float epsilon = 3;
+
+void updateClippers() {
+
+    // These are the directions towards the four corners of the img plane
+    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 leftUp = vec3(leftUpCorner[0],  leftUpCorner[1], leftUpCorner[2]);
+   
+    vec4 leftBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 leftBot = vec3(leftBotCorner[0],  leftBotCorner[1], leftBotCorner[2]);
+
+    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 rightUp = vec3(rightTopCorner[0],  rightTopCorner[1], rightTopCorner[2]);
+
+    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 rightBot = vec3(rightBotCorner[0],  rightBotCorner[1], rightBotCorner[2]);
+
+    // We use those directions to get the normal of the plane
+    vec3 leftNormal = (glm::cross(leftUp, leftBot));
+    vec3 rightNormal =(glm::cross(rightUp, rightBot));
+    vec3 topNormal = (glm::cross(leftUp, rightUp));
+    vec3 botNormal = (glm::cross(leftBot, rightBot));
+    
+    vec4 leftN = vec4(leftNormal.x, leftNormal.y, leftNormal.z, 1);
+    vec4 rightN = vec4(rightNormal.x, rightNormal.y, rightNormal.z, 1);
+    vec4 topN = vec4(topNormal.x, topNormal.y, topNormal.z, 1);
+    vec4 botN = vec4(botNormal.x, botNormal.y, botNormal.z, 1);
+
+    // We use the directions from the top to find points in the near plane and then find the normal of this plane
+    vec4 leftTopPoint = camera.position + (leftUpCorner * depth);
+    vec4 leftBottomPoint = camera.position + (leftBotCorner * depth);
+    vec4 rightBottomPoint = camera.position + (rightBotCorner * depth);
+    vec4 leftToRight = rightBottomPoint - leftBottomPoint;
+    vec4 leftToTop = leftTopPoint - leftBottomPoint;
+
+    vec3 leftToRight3 = vec3(leftToRight.x, leftToRight.y, leftToRight.z);
+    vec3 leftToTop3 = vec3(leftToTop.x, leftToTop.y, leftToTop.z);
+
+    vec3 nearNormal = (glm::cross(leftToRight3, leftToTop3));
+    vec4 nearN = normalize(vec4(nearNormal.x, nearNormal.y, nearNormal.z, 1));
+
+    clipper.nearNormal = nearN;
+    clipper.nearPoint = leftBottomPoint;
+    
+
+    printf("%f\n", epsilon);
+    std::cout<<glm::to_string(leftTopPoint)<<std::endl;
+    std::cout<<glm::to_string(leftBottomPoint)<<std::endl;
+    std::cout<<glm::to_string(rightBottomPoint)<<std::endl;
+
+}
+
+
+void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles) {
+  for (int i = 0; i < triangles.size(); i++){
+    float checkOne = dot(clipper.nearNormal , (triangles[i].v0 - clipper.nearPoint));
+    float checkTwo = dot(clipper.nearNormal , (triangles[i].v1 - clipper.nearPoint));
+    float checkThree = dot(clipper.nearNormal , (triangles[i].v2 - clipper.nearPoint));
+    if (checkOne > epsilon && checkTwo > epsilon && checkThree > epsilon) clippedTriangles.push_back(triangles[i]);
+  }
+}
+
+bool isPositive(Triangle triangle) {
+  return true;
+}
+
 
 void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
   vertex.position = camera.basis *(v - camera.position);
@@ -449,10 +551,12 @@ void Update()
         else is_lookAt = true;
         break;
       case SDLK_u:
-        light.position += vec4(0, 0, 0.1, 0);
+        // light.position += vec4(0, 0, 0.1, 0);
+        epsilon += 0.5;
         break;
       case SDLK_j:
-        light.position += vec4(0,0,-0.1,0);
+        // light.position += vec4(0,0,-0.1,0);
+        epsilon -= 0.5;
         break;
       case SDLK_h:
         light.position += vec4(-0.1, 0, 0, 0);
