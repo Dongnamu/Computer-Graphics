@@ -5,8 +5,9 @@
 #include "TestModelH.h"
 #include <stdint.h>
 #include <limits.h>
-#include <unordered_map>
-#include <math.h>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
 
 using namespace std;
 using glm::vec3;
@@ -17,9 +18,9 @@ using glm::mat4;
 using glm::ivec2;
 
 
-#define SCREEN_WIDTH 200
-#define SCREEN_HEIGHT 200
-#define FULLSCREEN_MODE false
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
+#define FULLSCREEN_MODE true
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -28,6 +29,10 @@ float yaw = 2 * PI / 180;
 
 float focal_length = SCREEN_HEIGHT / 2;
 
+
+float depth = 0.55;
+
+const float epsilon = 0.1;
 
 
 struct Camera{
@@ -58,30 +63,13 @@ struct Current {
   vec3 currentReflectance;
 };
 
-struct Direction {
-  float x;
-  float y;
-  float z;
-};
-
-struct Vec4 {
-  float x;
-  float y;
-  float z;
-  float w;
-};
-
-struct Lightpixel {
-  int x;
-  int y;
-  float zinv;
-  Vec4 pos3d;
-};
-
-
-struct lightDistance {
-  Lightpixel p;
-  float distance;
+struct Clipper {
+  vec4 leftNormal;
+  vec4 rightNormal;
+  vec4 topNormal;
+  vec4 botNormal;
+  vec4 nearNormal;
+  vec4 nearPoint;
 };
 
 Current current = {
@@ -102,9 +90,20 @@ Light light = {
   .indirectLight = 0.5f * vec3(1, 1, 1)
 };
 
-int depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
-float illuminationBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
-// unordered_map<Direction, lightDistance> shadowMap;
+Clipper clipper = {
+  .leftNormal = vec4(0,0,0,0),
+  .rightNormal = vec4(0,0,0,0),
+  .topNormal = vec4(0,0,0,0),
+  .botNormal = vec4(0,0,0,0),
+  .nearNormal = vec4(0,0,0,0),
+  .nearPoint= vec4(0,0,0, 0)
+};
+
+
+
+float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
+
+
 
 // vec4 cameraPos(0, 0, -2, 1.0);
 bool escape = false;
@@ -123,7 +122,15 @@ void ComputePolygonRows(const vector<Pixel>& vertextPixels, vector<Pixel>& leftP
 void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
 void DrawPolygon( screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex);
 void PixelShader( screen* screen, const Pixel& p);
-void calLightDepth(const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
+mat4 generateRotation(vec3 a);
+void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles);
+float calSign(vec4 trianglePoint, vec4 normal, vec4 point);
+void countSign(float v0, float v1, float v2, vector<int>& numSigns);
+bool isBoundary(vector<int> numSigns);
+bool isNegative(vector<int> numSigns);
+void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary, vector<vec4>& out);
+void updateClippers();
+
 
 int main( int argc, char* argv[] )
 {
@@ -132,10 +139,17 @@ int main( int argc, char* argv[] )
   vector<Triangle> triangles;
   LoadTestModel(triangles);
 
+  int size = triangles.size();
+
+  // camera.position = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), light.position) * camera.position;
+  // camera.basis =  generateRotation(vec3((90 * PI / 180), 0, 0)) * camera.basis;
   while( !escape )
     {
+      vector<Triangle> clippedTriangles;
       Update();
-      Draw(screen, triangles);
+      updateClippers();
+      ClipTriangles(triangles, clippedTriangles);
+      Draw(screen, clippedTriangles);
       SDL_Renderframe(screen);
     }
 
@@ -152,8 +166,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
   for (int y = 0; y < SCREEN_HEIGHT; y++) {
     for (int x = 0; x < SCREEN_WIDTH; x++) {
-      depthBuffer[y][x] = 0;
-      illuminationBuffer[y][x] = 0.0f;
+      depthBuffer[y][x] = 0.0f;
     }
   }
 
@@ -167,24 +180,221 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
     current.currentNormal = triangles[i].normal;
     current.currentReflectance = triangles[i].color;
+
+
     DrawPolygon(screen, vertices, vertex);
     // DrawPolygonEdges(screen, vertices);
 
   }
 }
 
-void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
-  vec4 fromLight = v - light.position;
-  vertex.position = camera.basis *(v - camera.position);
-  if (vertex.position[2] <= (camera.position[2] - focal_length)) {
-    p.zinv = -1;
-  } else {
-    p.zinv = 1/vertex.position[2];
-    p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
-    p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
-    p.pos3d = v;
+void updateClippers() {
 
+    // These are the directions towards the four corners of the img plane
+    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 leftUp = vec3(leftUpCorner[0],  leftUpCorner[1], leftUpCorner[2]);
+   
+    vec4 leftBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 leftBot = vec3(leftBotCorner[0],  leftBotCorner[1], leftBotCorner[2]);
+
+    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 rightUp = vec3(rightTopCorner[0],  rightTopCorner[1], rightTopCorner[2]);
+
+    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length, 1));
+    vec3 rightBot = vec3(rightBotCorner[0],  rightBotCorner[1], rightBotCorner[2]);
+
+    // We use those directions to get the normal of the plane
+    vec3 leftNormal = (glm::cross(leftUp, leftBot));
+    vec3 rightNormal =(glm::cross(rightUp, rightBot));
+    vec3 topNormal = (glm::cross(leftUp, rightUp));
+    vec3 botNormal = (glm::cross(leftBot, rightBot));
+    
+    vec4 leftN = vec4(leftNormal.x, leftNormal.y, leftNormal.z, 1);
+    vec4 rightN = vec4(rightNormal.x, rightNormal.y, rightNormal.z, 1);
+    vec4 topN = vec4(topNormal.x, topNormal.y, topNormal.z, 1);
+    vec4 botN = vec4(botNormal.x, botNormal.y, botNormal.z, 1);
+
+    // We use the directions from the top to find points in the near plane and then find the normal of this plane
+    vec4 leftTopPoint = camera.position + (leftUpCorner * depth);
+    vec4 leftBottomPoint = camera.position + (leftBotCorner * depth);
+    vec4 rightBottomPoint = camera.position + (rightBotCorner * depth);
+    vec4 leftToRight = rightBottomPoint - leftBottomPoint;
+    vec4 leftToTop = leftTopPoint - leftBottomPoint;
+
+    vec3 leftToRight3 = vec3(leftToRight.x, leftToRight.y, leftToRight.z);
+    vec3 leftToTop3 = vec3(leftToTop.x, leftToTop.y, leftToTop.z);
+
+    vec3 nearNormal = (glm::cross(leftToRight3, leftToTop3));
+    vec4 nearN = normalize(vec4(nearNormal.x, nearNormal.y, nearNormal.z, 1));
+
+    clipper.nearNormal = nearN;
+    clipper.nearPoint = leftBottomPoint;
+    
+
+    printf("%f\n", epsilon);
+
+}
+
+
+void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles) {
+  for (int i = 0; i < triangles.size(); i++){
+    vec4 v0 = triangles[i].v0;
+    vec4 v1 = triangles[i].v1;
+    vec4 v2 = triangles[i].v2;
+    float v0S = calSign(v0, clipper.nearNormal, clipper.nearPoint);
+    float v1S = calSign(v1, clipper.nearNormal, clipper.nearPoint);
+    float v2S = calSign(v2, clipper.nearNormal, clipper.nearPoint);
+    
+    // Count how many vertices are positive, zero and negative
+    vector<int> numSigns(3);
+    countSign(v0S, v1S, v2S, numSigns);
+    
+    //If all of them are positive, add to the clipped triange
+    if (numSigns[0] == 3) {
+      clippedTriangles.push_back(triangles[i]);
+      continue;
+    }
+
+    // If all of them are negative, skip to next triangle
+    if (isNegative(numSigns)) {
+      continue;
+    }
+
+
+    //If two points are at the boundary and one point is positive,
+    // or one point is at the boundary and two points are positive,
+    //add to the clipped triange
+    if (isBoundary(numSigns)) {
+      clippedTriangles.push_back(triangles[i]);
+      continue;
+    }
+
+    vector<vec4> in;
+    vector<vec4> boundary;
+    vector<vec4> out;
+
+    organiseData(v0, v0S, in, boundary, out);
+    organiseData(v1, v1S, in, boundary, out);
+    organiseData(v2, v2S, in, boundary, out);
+    
+    // printf("%d %d %d\n", numSigns[0], numSigns[1], numSigns[2]);
+    std::cout<<glm::to_string(in[0])<<std::endl;
+    
+    if (numSigns[0] == 1) {
+      vec4 inside = in[0];
+
+      if (numSigns[1] == 1) {
+        vec4 outside = out[0];
+
+        float d1 = calSign(inside, clipper.nearNormal, clipper.nearPoint);
+        float d2 = calSign(outside, clipper.nearNormal, clipper.nearPoint);
+        
+        float t = d1 / (d1 - d2);
+
+        vec4 intersect = inside + t * (outside - inside);
+        boundary.push_back(intersect);
+      } else {
+        vec4 outside0 = out[0];
+        vec4 outside1 = out[1];
+
+        float d1 = calSign(inside, clipper.nearNormal, clipper.nearPoint);
+        float d2 = calSign(outside0, clipper.nearNormal, clipper.nearPoint);
+        float d3 = calSign(outside1, clipper.nearNormal, clipper.nearPoint);
+
+        float t0 = d1 / (d1 - d2);
+        float t1 = d1 / (d1 - d3);
+
+        vec4 intersect0 = inside + t0 * (outside0 - inside);
+        vec4 intersect1 = inside + t1 * (outside1 - inside);
+
+        boundary.push_back(intersect0);
+        boundary.push_back(intersect1);
+      }
+
+      Triangle new_triangle(inside, boundary[0], boundary[1], triangles[i].color);   
+      new_triangle.normal = triangles[i].normal;   
+      clippedTriangles.push_back(new_triangle);
+
+
+
+    } else {
+      vec4 inside0 = in[0];
+      vec4 inside1 = in[1];
+      vec4 outside = out[0];
+
+      float d1 = calSign(inside0, clipper.nearNormal, clipper.nearPoint);
+      float d2 = calSign(inside1, clipper.nearNormal, clipper.nearPoint);
+      float d3 = calSign(outside, clipper.nearNormal, clipper.nearPoint);
+      
+      float t0 = d1 / (d1 - d3);
+      float t1 = d2 / (d2 - d3);
+
+      vec4 intersect0 = inside0 + t0 * (outside - inside0);
+      vec4 intersect1 = inside1 + t1 * (outside - inside1);
+
+      Triangle new_triangle0(inside0, intersect1, intersect0, triangles[i].color);
+      Triangle new_triangle1(inside0, inside1, intersect1, triangles[i].color);
+
+      new_triangle0.normal = triangles[i].normal;
+      new_triangle1.normal = triangles[i].normal;
+
+      clippedTriangles.push_back(new_triangle0);
+      clippedTriangles.push_back(new_triangle1);
+    }
   }
+}
+
+float calSign(vec4 trianglePoint, vec4 normal, vec4 point) {
+  float calculation = dot(normal, (trianglePoint - point));
+
+  if (calculation < epsilon && calculation >= 0) return 0;
+  else return calculation;
+}
+
+void countSign(float v0, float v1, float v2, vector<int>& numSigns) {
+  int negative = 0;
+  int positive = 0;
+  int zero = 0;
+  
+  if (v0 > 0) positive++;
+  if (v0 == 0) zero++;
+  if (v0 < 0) negative++;
+  if (v1 > 0) positive++;
+  if (v1 == 0) zero++;
+  if (v1 < 0) negative++;
+  if (v2 > 0) positive++;
+  if (v2 == 0) zero++;
+  if (v2 < 0) negative++;
+
+  numSigns[0] = positive;
+  numSigns[1] = zero;
+  numSigns[2] = negative;
+}
+
+bool isNegative(vector<int> numSigns) {
+  return (numSigns[2] == 3 || (numSigns[2] == 1 && numSigns[1] == 2) || (numSigns[2] == 2 && numSigns[1] == 1))
+}
+
+bool isBoundary(vector<int> numSigns) {
+  int positive = numSigns[0];
+  int zero = numSigns[1];
+
+  if ((positive == 1 && zero == 2) || (positive == 2 && zero == 1) || (zero == 3)) return true;
+  else return false;
+}
+
+void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary, vector<vec4>& out) {
+  if (v > 0) in.push_back(point); 
+  if (v == 0) boundary.push_back(point); 
+  if (v < 0) out.push_back(point); 
+}
+
+void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
+  vertex.position = camera.basis *(v - camera.position);
+  p.zinv = 1/vertex.position[2];
+  p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
+  p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
+  p.pos3d = v;
 }
 
 void Interpolate(Pixel a, Pixel b, vector<Pixel>& result){
@@ -351,73 +561,36 @@ void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixe
 
     Interpolate(depth_left, depth_right, drawRow);
     int k = 0;
-
-    if (drawRow[k].zinv >= 0) {
-      for (int j = left; j < right; j++) {
-        if (j >= 0 && j < SCREEN_WIDTH) {
-          if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
-            PixelShader(screen, drawRow[k]);
-          }
+    for (int j = left; j < right; j++) {
+      if (j >= 0 && j < SCREEN_WIDTH) {
+        if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
+          PixelShader(screen, drawRow[k]);
         }
-        k++;
       }
+      k++;
     }
   }
 }
-
 
 void PixelShader(screen* screen, const Pixel& p) {
 
   int x = p.x;
   int y = p.y;
-  int z = p.zinv * pow(2, 16);
 
-  if (depthBuffer[y][x] < z) {
-    depthBuffer[y][x] = z;
+  if (p.zinv >= 0) {
+    if (depthBuffer[y][x] < p.zinv) {
+      depthBuffer[y][x] = p.zinv;
+      float r = glm::distance(light.position, p.pos3d);
+      float area = 4 * PI * pow(r, 2);
 
-    float r = glm::distance(light.position, p.pos3d);
-    float area = 4 * PI * pow(r, 2);
 
-    vec4 normal = current.currentNormal;
-    vec4 direction = normalize(light.position - p.pos3d);
+      vec4 normal = current.currentNormal;
+      vec4 direction = normalize(light.position - p.pos3d);
 
-    float r_n  = dot(direction, normal);
+      float r_n  = dot(direction, normal);
 
-    // vec3 illumination = ((light.color * max((r_n), 0.f))/area);
-    vec3 illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
-    // PutPixelSDL(screen, x, y, current.currentReflectance * illumination);
-    PutPixelSDL(screen, x, y, illumination);
-  }
-}
-
-void calLightDepth(const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels) {
-  for (uint i = 0; i < leftPixels.size(); i++) {
-    int left = leftPixels[i].x;
-    int right = rightPixels[i].x;
-
-    Pixel depth_left = leftPixels[i];
-    Pixel depth_right = rightPixels[i];
-
-    int distance = abs(right - left) + 1;
-    vector<Pixel> depthRow(distance);
-    // drawRow.resize(distance);
-
-    Interpolate(depth_left, depth_right, depthRow);
-    int k = 0;
-
-    for (int j = left; j < right; j++) {
-      if (j >= 0 && j < SCREEN_WIDTH) {
-        if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
-          // float r = glm::distance(light.position, depthRow[k].pos3d);
-
-          // float rInv = 1/r;
-
-          // if (illuminationBuffer[leftPixels[i].y][j] < rInv) {
-            // lightDepth
-          // }
-        }
-      }
-      k++;
+      vec3 illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      PutPixelSDL(screen, x, y, current.currentReflectance * illumination);
     }
   }
 }
@@ -434,7 +607,6 @@ void DrawPolygon(screen* screen, const vector<vec4>& vertices, vector<Vertex>& v
   vector<Pixel> leftPixels;
   vector<Pixel> rightPixels;
   ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
-  calLightDepth(leftPixels, rightPixels);
   DrawRows(screen, leftPixels, rightPixels);
 }
 
@@ -522,10 +694,12 @@ void Update()
         else is_lookAt = true;
         break;
       case SDLK_u:
-        light.position += vec4(0, 0, 0.1, 0);
+        // light.position += vec4(0, 0, 0.1, 0);
+        depth += 0.1;
         break;
       case SDLK_j:
-        light.position += vec4(0,0,-0.1,0);
+        // light.position += vec4(0,0,-0.1,0);
+        depth -= 0.1;
         break;
       case SDLK_h:
         light.position += vec4(-0.1, 0, 0, 0);
