@@ -70,6 +70,10 @@ struct Clipper {
   vec4 botNormal;
   vec4 nearNormal;
   vec4 nearPoint;
+  vec4 leftPoint;
+  vec4 rightPoint;
+  vec4 topPoint;
+  vec4 botPoint;
 };
 
 Current current = {
@@ -96,7 +100,11 @@ Clipper clipper = {
   .topNormal = vec4(0,0,0,0),
   .botNormal = vec4(0,0,0,0),
   .nearNormal = vec4(0,0,0,0),
-  .nearPoint= vec4(0,0,0, 0)
+  .nearPoint = vec4(0,0,0,0),
+  .leftPoint = vec4(0,0,0,0),
+  .rightPoint = vec4(0,0,0,0),
+  .topPoint = vec4(0,0,0,0),
+  .botPoint = vec4(0,0,0,0)
 };
 
 
@@ -123,8 +131,8 @@ void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixe
 void DrawPolygon( screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex);
 void PixelShader( screen* screen, const Pixel& p);
 mat4 generateRotation(vec3 a);
-void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles);
-float calSign(vec4 trianglePoint, vec4 normal, vec4 point);
+void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles, vec4 normal, vec4 point);
+void calSign(vec4 trianglePoint, float& value, vec4 normal, vec4 point);
 void countSign(float v0, float v1, float v2, vector<int>& numSigns);
 bool isBoundary(vector<int> numSigns);
 bool isNegative(vector<int> numSigns);
@@ -145,11 +153,19 @@ int main( int argc, char* argv[] )
   // camera.basis =  generateRotation(vec3((90 * PI / 180), 0, 0)) * camera.basis;
   while( !escape )
     {
-      vector<Triangle> clippedTriangles;
+      vector<Triangle> nearTriangles;
+      vector<Triangle> leftTriangles;
+      vector<Triangle> rightTriangles;
+      vector<Triangle> topTriangles;
+      vector<Triangle> bottomTriangles;
       Update();
       updateClippers();
-      ClipTriangles(triangles, clippedTriangles);
-      Draw(screen, clippedTriangles);
+      ClipTriangles(triangles, nearTriangles, clipper.nearNormal, clipper.nearPoint);
+      ClipTriangles(nearTriangles, leftTriangles, clipper.leftNormal, clipper.leftPoint);
+      ClipTriangles(leftTriangles, rightTriangles, clipper.rightNormal, clipper.rightPoint);
+      ClipTriangles(rightTriangles, topTriangles, clipper.topNormal, clipper.topPoint);
+      ClipTriangles(topTriangles, bottomTriangles, clipper.botNormal, clipper.botPoint);
+      Draw(screen, bottomTriangles);
       SDL_Renderframe(screen);
     }
 
@@ -191,72 +207,87 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 void updateClippers() {
 
     // These are the directions towards the four corners of the img plane
-    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftUp = vec3(leftUpCorner[0],  leftUpCorner[1], leftUpCorner[2]);
    
-    vec4 leftBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 leftBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftBot = vec3(leftBotCorner[0],  leftBotCorner[1], leftBotCorner[2]);
 
-    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightUp = vec3(rightTopCorner[0],  rightTopCorner[1], rightTopCorner[2]);
 
-    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightBot = vec3(rightBotCorner[0],  rightBotCorner[1], rightBotCorner[2]);
 
     // We use those directions to get the normal of the plane
-    vec3 leftNormal = (glm::cross(leftUp, leftBot));
+    vec3 leftNormal = (glm::cross(-leftUp, leftBot));
     vec3 rightNormal =(glm::cross(rightUp, rightBot));
     vec3 topNormal = (glm::cross(leftUp, rightUp));
     vec3 botNormal = (glm::cross(leftBot, rightBot));
+
+    
     
     vec4 leftN = vec4(leftNormal.x, leftNormal.y, leftNormal.z, 1);
     vec4 rightN = vec4(rightNormal.x, rightNormal.y, rightNormal.z, 1);
-    vec4 topN = vec4(topNormal.x, topNormal.y, topNormal.z, 1);
-    vec4 botN = vec4(botNormal.x, botNormal.y, botNormal.z, 1);
+    vec4 topN = vec4(topNormal.x, -topNormal.y, topNormal.z, 1);
+    vec4 botN = vec4(botNormal.x, botNormal.y, -botNormal.z, 1);
 
     // We use the directions from the top to find points in the near plane and then find the normal of this plane
     vec4 leftTopPoint = camera.position + (leftUpCorner * depth);
     vec4 leftBottomPoint = camera.position + (leftBotCorner * depth);
     vec4 rightBottomPoint = camera.position + (rightBotCorner * depth);
+    vec4 rightTopPoint = camera.position + (rightTopCorner * depth);
     vec4 leftToRight = rightBottomPoint - leftBottomPoint;
     vec4 leftToTop = leftTopPoint - leftBottomPoint;
+    vec4 topTotop = rightTopPoint - leftTopPoint;
 
     vec3 leftToRight3 = vec3(leftToRight.x, leftToRight.y, leftToRight.z);
     vec3 leftToTop3 = vec3(leftToTop.x, leftToTop.y, leftToTop.z);
 
-    vec3 nearNormal = (glm::cross(leftToRight3, leftToTop3));
+    vec3 nearNormal = (glm::cross(-leftToRight3, leftToTop3));
     vec4 nearN = normalize(vec4(nearNormal.x, nearNormal.y, nearNormal.z, 1));
 
     clipper.nearNormal = nearN;
     clipper.nearPoint = leftBottomPoint;
-    
-
-    printf("%f\n", epsilon);
+    clipper.leftNormal = leftN;
+    clipper.rightNormal = rightN;
+    clipper.topNormal = topN;
+    clipper.botNormal = botN;
+    clipper.leftPoint = leftTopPoint;
+    clipper.rightPoint = rightTopPoint;
+    clipper.botPoint = leftBottomPoint + depth * leftToRight;
+    clipper.topPoint = leftTopPoint + depth * topTotop;
 
 }
 
 
-void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles) {
+void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles, vec4 normal, vec4 point) {
   for (int i = 0; i < triangles.size(); i++){
     vec4 v0 = triangles[i].v0;
     vec4 v1 = triangles[i].v1;
     vec4 v2 = triangles[i].v2;
-    float v0S = calSign(v0, clipper.nearNormal, clipper.nearPoint);
-    float v1S = calSign(v1, clipper.nearNormal, clipper.nearPoint);
-    float v2S = calSign(v2, clipper.nearNormal, clipper.nearPoint);
+    float v0S;
+    float v1S;
+    float v2S;
+    calSign(v0, v0S, normal, point);
+    calSign(v1, v1S, normal, point);
+    calSign(v2, v2S, normal, point);
     
     // Count how many vertices are positive, zero and negative
     vector<int> numSigns(3);
     countSign(v0S, v1S, v2S, numSigns);
+
     
     //If all of them are positive, add to the clipped triange
     if (numSigns[0] == 3) {
+      // printf("Positive\n");
       clippedTriangles.push_back(triangles[i]);
       continue;
     }
 
     // If all of them are negative, skip to next triangle
     if (isNegative(numSigns)) {
+      // printf("Negative\n");
       continue;
     }
 
@@ -286,8 +317,10 @@ void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedT
       if (numSigns[1] == 1) {
         vec4 outside = out[0];
 
-        float d1 = calSign(inside, clipper.nearNormal, clipper.nearPoint);
-        float d2 = calSign(outside, clipper.nearNormal, clipper.nearPoint);
+        float d1;
+        float d2;
+        calSign(inside, d1, normal, point);
+        calSign(outside, d2, normal, point);
         
         float t = d1 / (d1 - d2);
 
@@ -297,9 +330,12 @@ void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedT
         vec4 outside0 = out[0];
         vec4 outside1 = out[1];
 
-        float d1 = calSign(inside, clipper.nearNormal, clipper.nearPoint);
-        float d2 = calSign(outside0, clipper.nearNormal, clipper.nearPoint);
-        float d3 = calSign(outside1, clipper.nearNormal, clipper.nearPoint);
+        float d1;
+        float d2; 
+        float d3;
+        calSign(inside, d1, normal, point);
+        calSign(outside0, d2, normal, point);
+        calSign(outside1, d3, normal, point);
 
         float t0 = d1 / (d1 - d2);
         float t1 = d1 / (d1 - d3);
@@ -322,9 +358,12 @@ void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedT
       vec4 inside1 = in[1];
       vec4 outside = out[0];
 
-      float d1 = calSign(inside0, clipper.nearNormal, clipper.nearPoint);
-      float d2 = calSign(inside1, clipper.nearNormal, clipper.nearPoint);
-      float d3 = calSign(outside, clipper.nearNormal, clipper.nearPoint);
+      float d1;
+      float d2;
+      float d3;
+      calSign(inside0, d1, normal, point);
+      calSign(inside1, d2, normal, point);
+      calSign(outside, d3, normal, point);
       
       float t0 = d1 / (d1 - d3);
       float t1 = d2 / (d2 - d3);
@@ -344,11 +383,14 @@ void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedT
   }
 }
 
-float calSign(vec4 trianglePoint, vec4 normal, vec4 point) {
-  float calculation = dot(normal, (trianglePoint - point));
+void calSign(vec4 trianglePoint, float& value, vec4 normal, vec4 point) {
+  float calculation = (dot(normal, (trianglePoint - point)));
 
-  if (calculation < epsilon && calculation >= 0) return 0;
-  else return calculation;
+  if ((calculation < epsilon) && (calculation > 0.0)) {
+    value = 0;
+  } else {
+    value = calculation;
+  }
 }
 
 void countSign(float v0, float v1, float v2, vector<int>& numSigns) {
@@ -372,7 +414,7 @@ void countSign(float v0, float v1, float v2, vector<int>& numSigns) {
 }
 
 bool isNegative(vector<int> numSigns) {
-  return (numSigns[2] == 3 || (numSigns[2] == 1 && numSigns[1] == 2) || (numSigns[2] == 2 && numSigns[1] == 1))
+  return (numSigns[2] == 3 || (numSigns[2] == 1 && numSigns[1] == 2) || (numSigns[2] == 2 && numSigns[1] == 1));
 }
 
 bool isBoundary(vector<int> numSigns) {
