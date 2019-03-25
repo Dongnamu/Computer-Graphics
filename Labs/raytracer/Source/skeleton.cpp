@@ -15,8 +15,8 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 200
-#define SCREEN_HEIGHT 200
+#define SCREEN_WIDTH 816
+#define SCREEN_HEIGHT 816
 #define FULLSCREEN_MODE true
 #define PI 3.14159
 
@@ -30,6 +30,8 @@ struct Intersection
 {
   vec4 position;
   float distance;
+  bool isTriangle;
+  int circleIndex;
   int triangleIndex;
 };
 
@@ -56,11 +58,13 @@ mat4 R;
 void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt);
 void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection);
+bool circleIntersection(vec4 start, vec4 dir, const vector<Circle>& circles, Intersection& closestIntersection);
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
 vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles);
-void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
+vec3 circleDirectLight(vec4 start, Light &light, const Intersection& i, const vector<Circle>& circle);
+void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const vector<Circle>& circles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 
 
 
@@ -99,7 +103,10 @@ int main( int argc, char* argv[] )
   };
 
   vector<Triangle> triangles;
+  vector<Circle> circles;
+
   LoadTestModel(triangles);
+  LoadCircles(circles);
 
   MPI_Init(&argc, &argv);
 
@@ -213,7 +220,7 @@ int main( int argc, char* argv[] )
         MPI_Send(sendbuf, 24, MPI_FLOAT, k, tag, MPI_COMM_WORLD);
       }
 
-      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, circles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
       vec3 rank_light[local_ncols][local_nrows];
@@ -278,7 +285,7 @@ int main( int argc, char* argv[] )
       if (recvbuf[24] == 1) escape = true;
       else escape = false;
 
-      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, circles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       sendbuf[0] = loop_row_start_point;
       sendbuf[1] = loop_row_end_point;
@@ -342,16 +349,23 @@ void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int lo
   }
 }
 
-void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
+void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const vector<Circle>& circles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
   for (int row = row_start; row < row_end; row++) {
     for (int col = col_start; col < col_end; col++) {
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
       Intersection intersect;
+      if (circleIntersection(camera.position, d, circles, intersect)) {
+        // printf("I'm here\n");
+        vec3 light_power = circleDirectLight(camera.position, light, intersect, circles);
+        pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = light_power;
+        pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = circles[intersect.circleIndex].color;
+      }
       if (ClosestIntersection(camera.position, d, triangles, intersect)){
         vec3 light_power = DirectLight(light, intersect, triangles);
         pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = light_power;
         pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = triangles[intersect.triangleIndex].color;
       }
+
     }
   }
 }
@@ -375,9 +389,16 @@ mat4 lookAt(vec3 from, vec3 to) {
 }
 
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection){
-  closestIntersection.distance = maxFloat;
-  for(uint i = 0; i < triangles.size(); i++){
 
+  // closestIntersection.distance = maxFloat;
+
+  for(uint i = 0; i < triangles.size(); i++){
+    // if (index > -1) {
+    //   if (index == i) continue;
+    //   if (dot(normalize(triangles[index].normal), normalize(d)) < 0) continue;
+    //   // float angle = acos(dot(normalize(triangles[i].normal),normalize(d)))/abs(dot(normalize(triangles[i].normal),normalize(d)));
+    //   // if (angle >=  1.5708) continue;
+    // }
     Triangle triangle = triangles[i];
     vec4 v0 = triangle.v0;
     vec4 v1 = triangle.v1;
@@ -390,23 +411,104 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     vec3 direc(d[0], d[1], d[2]);
 
     mat3 A( -direc, e1, e2);
-    vec3 x = glm::inverse( A ) * b;
 
-    //
-    // vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
-    // vec4 r = vec4(m.x, m.y, m.z, 1);
+    float detA = glm::determinant(A);
 
-    if (x[0] < closestIntersection.distance && x[0]>0 && x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
-      closestIntersection.distance = x[0];
-      closestIntersection.position = s + x[0] * d;
-      closestIntersection.triangleIndex = i;
+    mat3 T(b, e1, e2);
+
+    float detT = glm::determinant(T);
+
+    float t = detT / detA;
+
+    if (t < closestIntersection.distance && t > 0) {
+      mat3 U(-direc, b, e2);
+      mat3 V(-direc, e1, b);
+      float detU = glm::determinant(U);
+      float detV = glm::determinant(V);
+
+      float u = detU / detA;
+      float v = detV / detA;
+
+      if (u >= 0 && v >= 0 && u + v <= 1) {
+        vec3 m = vec3(v0.x, v0.y, v0.z) + u*e1 + v*e2;
+        vec4 r = vec4(m.x, m.y, m.z, 1);
+
+        closestIntersection.distance = t;
+        closestIntersection.position = r;
+        closestIntersection.triangleIndex = i;
+        closestIntersection.isTriangle = true;
+      }
     }
   }
-  if (closestIntersection.distance == maxFloat) return false;
 
+  if (closestIntersection.distance == maxFloat) return false;
   return true;
 }
 
+bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersection& closestIntersection) {
+
+  closestIntersection.distance = maxFloat;
+
+  for (uint i = 0; i < circles.size(); i++) {
+
+    float t0, t1;
+
+    vec4 L4 = circles[i].center - s;
+    vec3 L = vec3(L4);
+
+    vec3 d3 = vec3(d);
+
+    float radius = circles[i].radius;
+
+    float tca = dot(L, d3);
+
+    if (tca < 0) return false;
+
+    float d2 = dot(L, L) - tca * tca;
+
+    if (d2 > radius) return false;
+
+    float thc = sqrt(radius - d2);
+
+    t0 = tca - thc;
+
+    t1 = tca + thc;
+
+    // vec4 L4 = s - circles[i].center;
+
+    // vec3 L = vec3(L4.x, L4.y, L4.z);
+    // vec3 d3 = vec3(d.x, d.y, d.z);
+
+    // float a = dot(d3, d3);
+    // float b = 2 * dot(d3, L);
+    // float c = dot(L, L) - circles[i].radius;
+
+    // if ((pow(b,2) - 4 * a * c) < 0) return false;
+
+    // t0 = (-b + sqrt(pow(b, 2) - 4 * a * c)) / 2 * a;
+    // t1 = (-b - sqrt(pow(b, 2) - 4 * a * c)) / 2 * a;
+
+
+    if (t0 > t1) std::swap(t0, t1);
+
+    if (t0 < 0) {
+      t0 = t1;
+
+      if (t0 < 0) return false;
+    }
+
+    if (t0 < closestIntersection.distance) {
+      // printf("I'm here\n");
+      closestIntersection.distance = t0;
+      closestIntersection.position = s + t0 * d;
+      closestIntersection.isTriangle = false;
+      closestIntersection.circleIndex = i;
+    }
+  }
+
+  if (closestIntersection.distance == maxFloat) return false;
+  return true;
+}
 
 /*Place updates of parameters here*/
 mat4 generateRotation(vec3 a){
@@ -448,6 +550,20 @@ vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& tr
   return calD(r, x, light.color, radius);
 }
 
+vec3 circleDirectLight(vec4 start, Light& light, const Intersection& i, const vector<Circle>& circles) {
+
+  vec4 dir = i.position - start;
+  vec4 normal4 = dir - circles[i.circleIndex].center;
+  vec3 normal = normalize(vec3(normal4));
+  // circles[i.circleIndex].normal = normal;
+
+  vec3 r = normalize(light.position - i.position);
+
+  float radius = glm::distance(light.position, i.position);
+
+  return calD(r, normal, light.color, radius);
+}
+
 void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt)
 {
   static int t = SDL_GetTicks();
@@ -456,7 +572,7 @@ void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt)
   float dt = float(t2-t);
   t = t2;
   /*Good idea to remove this*/
-  std::cout << "Render time: " << dt << " ms." << std::endl;
+  // std::cout << "Render time: " << dt << " ms." << std::endl;
   /* Update variables*/
   SDL_Event e;
   mat4 translation(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
