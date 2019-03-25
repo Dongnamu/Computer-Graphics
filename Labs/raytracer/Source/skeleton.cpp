@@ -5,6 +5,7 @@
 #include "TestModelH.h"
 #include <stdint.h>
 #include <limits.h>
+#include "mpi.h"
 
 using namespace std;
 using glm::vec3;
@@ -12,9 +13,10 @@ using glm::mat3;
 using glm::vec4;
 using glm::mat4;
 
-
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 800
+#define N_DIMENSION 4
+#define MASTER 0
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
 #define FULLSCREEN_MODE true
 #define PI 3.14159
 
@@ -44,22 +46,8 @@ struct Light{
     vec3 color;
 };
 
-Camera camera = {
-  .position = vec4(0,0,-2, 1.0),
-  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
-  // .center = vec3(0.003724, 0.929729, 0.07459)
-  .center = vec3(0,0,0)
-};
-
-Light light = {
-  .position = vec4(0, -0.5, -0.7, 1.0),
-  .color = 14.f * vec3(1,1,1),
-};
-
 // vec4 cameraPos(0, 0, -2, 1.0);
 mat4 R;
-bool escape = false;
-bool is_lookAt = false;
 
 
 
@@ -67,15 +55,16 @@ bool is_lookAt = false;
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 
-void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Circle>& circles);
+void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt);
+void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection);
 bool circleIntersection(vec4 start, vec4 dir, const vector<Circle>& circles, Intersection& closestIntersection);
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
-vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles);
-vec3 circleDirectLight(const Intersection& i, const vector<Circle>& circle);
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles);
+vec3 circleDirectLight(vec4 start, Light &light, const Intersection& i, const vector<Circle>& circle);
+void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const vector<Circle>& circles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
 
 
 
@@ -83,54 +72,301 @@ vec3 circleDirectLight(const Intersection& i, const vector<Circle>& circle);
 int main( int argc, char* argv[] )
 {
 
-  screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
+  int rank;
+  int size;
+
+  int local_nrows;
+  int local_ncols;
+  int loop_row_start_point;
+  int loop_col_start_point;
+  int loop_row_end_point;
+  int loop_col_end_point;
+  int tag = 0;
+  MPI_Status status;
+
+  bool escape = false;
+  bool is_lookAt = false;
+
+  float *sendbuf;
+  float *recvbuf;
+
+  Camera camera = {
+    .position = vec4(0,0,-2, 1.0),
+    .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
+    // .center = vec3(0.003724, 0.929729, 0.07459)
+    .center = vec3(0,0,0)
+  };
+
+  Light light = {
+    .position = vec4(0, -0.5, -0.7, 1.0),
+    .color = 14.f * vec3(1,1,1),
+  };
+
   vector<Triangle> triangles;
   vector<Circle> circles;
-
   LoadTestModel(triangles);
   LoadCircles(circles);
 
-  while( !escape )
-    {
-      Update();
-      Draw(screen, triangles, circles);
-      SDL_Renderframe(screen);
+  MPI_Init(&argc, &argv);
+
+  MPI_Comm_size( MPI_COMM_WORLD, &size );
+  MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+
+  if (size != N_DIMENSION) {
+    fprintf(stderr, "Error: number of dimension is assumed to be 4\n");
+    MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+  }
+
+  local_nrows = SCREEN_HEIGHT / 2;
+  local_ncols = SCREEN_WIDTH / 2;
+
+  vec3 color(0.0, 0.0, 0.0);
+
+  vec3 pixel_light_value[local_nrows][local_ncols];
+  vec3 pixel_color_value[local_nrows][local_ncols];
+
+  switch (rank) {
+    case 0:
+      loop_row_start_point = 0;
+      loop_col_start_point = 0;
+      loop_row_end_point = local_nrows;
+      loop_col_end_point = local_ncols;
+      break;
+    case 1:
+      loop_row_start_point = 0;
+      loop_col_start_point = local_ncols;
+      loop_row_end_point = local_nrows;
+      loop_col_end_point = SCREEN_WIDTH;
+      break;
+    case 2:
+      loop_row_start_point = local_nrows;
+      loop_col_start_point = 0;
+      loop_row_end_point = SCREEN_HEIGHT;
+      loop_col_end_point = local_ncols;
+      break;
+    case 3:
+      loop_row_start_point = local_nrows;
+      loop_col_start_point = local_ncols;
+      loop_row_end_point = SCREEN_HEIGHT;
+      loop_col_end_point = SCREEN_WIDTH;
+      break;
+  }
+
+  sendbuf = (float*) malloc(sizeof(float) * (SCREEN_WIDTH * 3));
+  recvbuf = (float*) malloc(sizeof(float) * (SCREEN_HEIGHT * 3));
+  MPI_Buffer_attach(sendbuf, sizeof(float) * (SCREEN_WIDTH * 3));
+  MPI_Buffer_attach(recvbuf, sizeof(float) * (SCREEN_HEIGHT * 3));
+
+  bool is_screen = false;
+  screen* screen;
+
+  while( !escape ) {
+
+    for (int i = 0; i < local_ncols; i++) {
+      for (int j = 0; j < local_nrows; j++) {
+        pixel_light_value[i][j] = color;
+        pixel_color_value[i][j] = color;
+      }
     }
 
+    if (rank == MASTER) {
+      if (!is_screen) {
+        screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
+        memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+        is_screen = true;
+      }
+
+      Update(camera, light, escape, is_lookAt);
+
+      for (int i = 0; i < 4; i++) {
+        sendbuf[i] = camera.position[i];
+      }
+
+      vec4 c0 = camera.basis[0];
+      vec4 c1 = camera.basis[1];
+      vec4 c2 = camera.basis[2];
+      vec4 c3 = camera.basis[3];
+
+      for (int i = 4; i < 8; i++) {
+        sendbuf[i] = c0[i - 4];
+      }
+
+      for (int i = 8; i < 12; i++) {
+        sendbuf[i] = c1[i - 8];
+      }
+
+      for (int i = 12; i < 16; i++) {
+        sendbuf[i] = c2[i - 12];
+      }
+
+      for (int i = 16; i < 20; i++) {
+        sendbuf[i] = c3[i-16];
+      }
+
+      for (int i = 20; i < 24; i++) {
+        sendbuf[i] = light.position[i - 20];
+      }
+
+      if (escape) sendbuf[24] = 1;
+      else sendbuf[24] = 0;
+
+      if (escape) {
+        SDL_SaveImage( screen, "screenshot.bmp" );
+        KillSDL(screen);
+        MPI_Abort(MPI_COMM_WORLD, 0);
+        exit(0);
+      }
+
+      for (int k = 1; k < size; k++) {
+        MPI_Send(sendbuf, 24, MPI_FLOAT, k, tag, MPI_COMM_WORLD);
+      }
+
+      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, circles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+
+      Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+
+      for (int i = 0; i < local_ncols; i++) {
+        for (int j = 0; j < local_nrows; j++) {
+          pixel_light_value[i][j] = color;
+          pixel_color_value[i][j] = color;
+        }
+      }
+
+
+      int rank_row_start;
+      int rank_row_end;
+      int rank_col_start;
+      int rank_col_end;
+
+      for (int k = 1; k < size; k++) {
+        MPI_Recv(recvbuf, 4, MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
+        rank_row_start = recvbuf[0];
+        rank_row_end = recvbuf[1];
+        rank_col_start = recvbuf[2];
+        rank_col_end = recvbuf[3];
+
+        for (int i = 0; i < local_nrows; i++) {
+          MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
+          for (int j = 0; j < local_ncols; j++) {
+            pixel_light_value[i][j][0] = recvbuf[0 + 3 * j];
+            pixel_light_value[i][j][1] = recvbuf[1 + 3 * j];
+            pixel_light_value[i][j][2] = recvbuf[2 + 3 * j];
+          }
+        }
+        for (int i = 0; i < local_nrows; i++) {
+          MPI_Recv(recvbuf, (local_nrows * 3), MPI_FLOAT, k, tag, MPI_COMM_WORLD, &status);
+          for (int j = 0; j < local_ncols; j++) {
+            pixel_color_value[i][j][0] = recvbuf[0 + 3 * j];
+            pixel_color_value[i][j][1] = recvbuf[1 + 3 * j];
+            pixel_color_value[i][j][2] = recvbuf[2 + 3 * j];
+          }
+        }
+
+        Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, rank_row_start, rank_row_end, rank_col_start, rank_col_end);
+
+      }
+      SDL_Renderframe(screen);
+    } else {
+
+      MPI_Recv(recvbuf, 24, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD, &status);
+
+      camera.position = vec4(recvbuf[0], recvbuf[1], recvbuf[2], recvbuf[3]);
+
+      vec4 c0(recvbuf[4], recvbuf[5], recvbuf[6], recvbuf[7]);
+      vec4 c1(recvbuf[8], recvbuf[9], recvbuf[10], recvbuf[11]);
+      vec4 c2(recvbuf[12], recvbuf[13], recvbuf[14], recvbuf[15]);
+      vec4 c3(recvbuf[16], recvbuf[17], recvbuf[18], recvbuf[19]);
+
+      camera.basis = mat4(c0, c1, c2, c3);
+
+      light.position = vec4(recvbuf[20], recvbuf[21], recvbuf[22], recvbuf[23]);
+
+      if (recvbuf[24] == 1) escape = true;
+      else escape = false;
+
+      processPart(camera, light, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, circles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+
+      sendbuf[0] = loop_row_start_point;
+      sendbuf[1] = loop_row_end_point;
+      sendbuf[2] = loop_col_start_point;
+      sendbuf[3] = loop_col_end_point;
+
+      MPI_Send(sendbuf, 4, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
+
+      for (int i = 0; i < local_nrows; i++) {
+        for (int j = 0; j < local_ncols; j++) {
+            sendbuf[0 + 3 * j] = pixel_light_value[i][j][0];
+            sendbuf[1 + 3 * j] = pixel_light_value[i][j][1];
+            sendbuf[2 + 3 * j] = pixel_light_value[i][j][2];
+        }
+        MPI_Send(sendbuf, (local_ncols * 3), MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
+      }
+      for (int i = 0; i < local_nrows; i++) {
+        for (int j = 0; j < local_ncols; j++) {
+            sendbuf[0 + 3 * j] = pixel_color_value[i][j][0];
+            sendbuf[1 + 3 * j] = pixel_color_value[i][j][1];
+            sendbuf[2 + 3 * j] = pixel_color_value[i][j][2];
+        }
+        MPI_Send(sendbuf, (local_ncols * 3), MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
+      }
+    }
+  }
+  //
+  // while( !escape )
+  //   {
+  //     Update();
+  //     Draw(screen, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point, rank);
+  //     SDL_Renderframe(screen);
+  //   }
+  //
   SDL_SaveImage( screen, "screenshot.bmp" );
   KillSDL(screen);
+
+  MPI_Finalize();
+  exit(0);
   return 0;
 }
 
 /*Place your drawing here*/
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Circle>& circles)
+void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end)
 {
   /* Clear buffer */
-  memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
 
   vec3 colour(1.0,0.0,0.0);
 
-  for (int row=0; row< SCREEN_HEIGHT; row++){
-    for (int col = 0; col<SCREEN_WIDTH; col++ ){
+  for (int row=row_start; row < row_end; row++){
+    for (int col = col_start; col<col_end; col++ ){
+      PutPixelSDL(screen, row, col, pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] * pixel_light_value[(col - col_start) + (row - row_start) * local_ncols]);
+
+      // vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
+      // Intersection intersect;
+      // if (ClosestIntersection(camera.position, d, triangles, intersect)){
+      //   vec3 light_power = DirectLight(intersect, triangles);
+      //   PutPixelSDL(screen, row, col, triangles[intersect.triangleIndex].color * light_power);
+      // }
+    }
+  }
+}
+
+void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const vector<Circle>& circles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
+  for (int row = row_start; row < row_end; row++) {
+    for (int col = col_start; col < col_end; col++) {
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
-      // vec4 d = vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
       Intersection intersect;
-      Intersection lightIntersect;
       if (ClosestIntersection(camera.position, d, triangles, intersect)){
-      // if(ClosestIntersection(light.position, d, triangles, lightIntersect)) {
-        // vec3 light_power = DirectLight(lightIntersect, triangles);
-        vec3 light_power = DirectLight(intersect, triangles);
-        // PutPixelSDL(screen, row, col, light_power);
-        PutPixelSDL(screen, row, col, triangles[intersect.triangleIndex].color * light_power);
+        vec3 light_power = DirectLight(light, intersect, triangles);
+        pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = light_power;
+        pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = triangles[intersect.triangleIndex].color;
       }
       if (circleIntersection(camera.position, d, circles, intersect)) {
-        vec3 light_power = circleDirectLight(intersect, circles);
-        PutPixelSDL(screen, row, col, circles[intersect.circleIndex].color * light_power);
+        // printf("I'm here\n");
+        vec3 light_power = circleDirectLight(camera.position, light, intersect, circles);
+        pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = light_power;
+        pixel_color_value[(col - col_start) + (row - row_start) * local_ncols] = circles[intersect.circleIndex].color;
       }
 
     }
   }
-
 }
 
 mat4 lookAt(vec3 from, vec3 to) {
@@ -152,10 +388,16 @@ mat4 lookAt(vec3 from, vec3 to) {
 }
 
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection){
-  closestIntersection.distance = maxFloat;
-  // float current = closestIntersection.distance;
-  for(uint i = 0; i < triangles.size(); i++){
 
+  closestIntersection.distance = maxFloat;
+
+  for(uint i = 0; i < triangles.size(); i++){
+    // if (index > -1) {
+    //   if (index == i) continue;
+    //   if (dot(normalize(triangles[index].normal), normalize(d)) < 0) continue;
+    //   // float angle = acos(dot(normalize(triangles[i].normal),normalize(d)))/abs(dot(normalize(triangles[i].normal),normalize(d)));
+    //   // if (angle >=  1.5708) continue;
+    // }
     Triangle triangle = triangles[i];
     vec4 v0 = triangle.v0;
     vec4 v1 = triangle.v1;
@@ -168,20 +410,37 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
     vec3 direc(d[0], d[1], d[2]);
 
     mat3 A( -direc, e1, e2);
-    vec3 x = glm::inverse( A ) * b;
 
-    //
-    // vec3 m = vec3(v0.x, v0.y, v0.z) + x[1]*e1 + x[2]*e2;
-    // vec4 r = vec4(m.x, m.y, m.z, 1);
+    float detA = glm::determinant(A);
 
-    if (x[0] < closestIntersection.distance && x[0]>0 && x[1] >= 0 && x[2] >= 0 && x[1]+x[2] <= 1){
-      closestIntersection.distance = x[0];
-      closestIntersection.position = s + x[0] * d;
-      closestIntersection.triangleIndex = i;
+    mat3 T(b, e1, e2);
+
+    float detT = glm::determinant(T);
+
+    float t = detT / detA;
+
+    if (t < closestIntersection.distance && t > 0) {
+      mat3 U(-direc, b, e2);
+      mat3 V(-direc, e1, b);
+      float detU = glm::determinant(U);
+      float detV = glm::determinant(V);
+
+      float u = detU / detA;
+      float v = detV / detA;
+
+      if (u >= 0 && v >= 0 && u + v <= 1) {
+        vec3 m = vec3(v0.x, v0.y, v0.z) + u*e1 + v*e2;
+        vec4 r = vec4(m.x, m.y, m.z, 1);
+
+        closestIntersection.distance = t;
+        closestIntersection.position = r;
+        closestIntersection.triangleIndex = i;
+        closestIntersection.isTriangle = true;
+      }
     }
   }
-  if (closestIntersection.distance == maxFloat) return false;
 
+  if (closestIntersection.distance == maxFloat) return false;
   return true;
 }
 
@@ -190,7 +449,6 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
   // closestIntersection.distance = maxFloat;
 
   float current = closestIntersection.distance;
-
   for (uint i = 0; i < circles.size(); i++) {
 
     float t0, t1;
@@ -219,6 +477,7 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
     }
 
     if (t0 < closestIntersection.distance) {
+      // printf("I'm here\n");
       closestIntersection.distance = t0;
       closestIntersection.position = s + t0 * d;
       closestIntersection.isTriangle = false;
@@ -257,7 +516,7 @@ vec3 calD(vec3 r, vec3 n, vec3 power, float radius) {
   return D;
 
 }
-vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles) {
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles) {
 
   vec3 n(triangles[i.triangleIndex].normal.x, triangles[i.triangleIndex].normal.y, triangles[i.triangleIndex].normal.z);
 
@@ -270,10 +529,9 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles) {
   return calD(r, x, light.color, radius);
 }
 
-vec3 circleDirectLight(const Intersection& i, const vector<Circle>& circles) {
+vec3 circleDirectLight(vec4 start, Light& light, const Intersection& i, const vector<Circle>& circles) {
 
-  vec4 dir = i.position - camera.position;
-  vec4 normal4 = (i.position - circles[i.circleIndex].center);
+  vec4 normal4 = i.position - circles[i.circleIndex].center;
   vec3 normal = normalize(vec3(normal4));
   // circles[i.circleIndex].normal = normal;
 
@@ -284,7 +542,7 @@ vec3 circleDirectLight(const Intersection& i, const vector<Circle>& circles) {
   return calD(r, normal, light.color, radius);
 }
 
-void Update()
+void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt)
 {
   static int t = SDL_GetTicks();
   /* Compute frame time */
