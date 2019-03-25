@@ -64,23 +64,20 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	circles.clear();
 
-	circles.reserve(3);
-
 	float L = 555;
 
-	vec4 A(423,330,247,1);
-	// vec4 B(200, 100, 200, 1);
-	// vec4 C(200, 300, 200, 1);
+	vec4 A(223,330,247,1);
+	vec4 B(323,330,247,1);
+	vec4 C(423,330,247,1);
 
+	circles.push_back(Circle(A, 60, white));
+	circles.push_back(Circle(B, 20, cyan));
+	circles.push_back(Circle(C, 60, yellow));
 
-	circles.push_back(Circle(A, 0.5, white));
-	// circles.push_back(Circle(B, 2, cyan));
-	// circles.push_back(Circle(C, 3, yellow));
-
-	for( size_t i=0; i<circles.size(); ++i )
+	for( uint i=0; i<circles.size(); ++i )
 	{
-		circles[i].center *= 2/L;
-		circles[i].radius *= 2/L;
+		circles[i].center *= (2/L);
+		circles[i].radius *= (2/L);
 		circles[i].center -= vec4(1,1,1,1);
 		circles[i].center.x *= -1;
 		circles[i].center.y *= -1;
@@ -146,68 +143,68 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	// ---------------------------------------------------------------------------
 	// Short block
 
-	// A = vec4(290,0,114,1);
-	// B = vec4(130,0, 65,1);
-	// C = vec4(240,0,272,1);
-	// D = vec4( 82,0,225,1);
+	A = vec4(290,0,114,1);
+	B = vec4(130,0, 65,1);
+	C = vec4(240,0,272,1);
+	D = vec4( 82,0,225,1);
 
-	// E = vec4(290,165,114,1);
-	// F = vec4(130,165, 65,1);
-	// G = vec4(240,165,272,1);
-	// H = vec4( 82,165,225,1);
+	E = vec4(290,165,114,1);
+	F = vec4(130,165, 65,1);
+	G = vec4(240,165,272,1);
+	H = vec4( 82,165,225,1);
 
-	// // Front
-	// triangles.push_back( Triangle(E,B,A,red) );
-	// triangles.push_back( Triangle(E,F,B,red) );
+	// Front
+	triangles.push_back( Triangle(E,B,A,red) );
+	triangles.push_back( Triangle(E,F,B,red) );
 
-	// // Front
-	// triangles.push_back( Triangle(F,D,B,red) );
-	// triangles.push_back( Triangle(F,H,D,red) );
+	// Front
+	triangles.push_back( Triangle(F,D,B,red) );
+	triangles.push_back( Triangle(F,H,D,red) );
 
-	// // BACK
-	// triangles.push_back( Triangle(H,C,D,red) );
-	// triangles.push_back( Triangle(H,G,C,red) );
+	// BACK
+	triangles.push_back( Triangle(H,C,D,red) );
+	triangles.push_back( Triangle(H,G,C,red) );
 
-	// // LEFT
-	// triangles.push_back( Triangle(G,E,C,red) );
-	// triangles.push_back( Triangle(E,A,C,red) );
+	// LEFT
+	triangles.push_back( Triangle(G,E,C,red) );
+	triangles.push_back( Triangle(E,A,C,red) );
 
-	// // TOP
-	// triangles.push_back( Triangle(G,F,E,red) );
-	// triangles.push_back( Triangle(G,H,F,red) );
+	// TOP
+	triangles.push_back( Triangle(G,F,E,red) );
+	triangles.push_back( Triangle(G,H,F,red) );
 
-	// // ---------------------------------------------------------------------------
-	// // Tall block
+	// ---------------------------------------------------------------------------
+	// Tall block
 
-	// A = vec4(423,0,247,1);
-	// B = vec4(265,0,296,1);
-	// C = vec4(472,0,406,1);
-	// D = vec4(314,0,456,1);
+	A = vec4(423,0,247,1);
+	B = vec4(265,0,296,1);
+	C = vec4(472,0,406,1);
+	D = vec4(314,0,456,1);
 
-	// E = vec4(423,330,247,1);
-	// F = vec4(265,330,296,1);
-	// G = vec4(472,330,406,1);
-	// H = vec4(314,330,456,1);
+	E = vec4(423,330,247,1);
+	F = vec4(265,330,296,1);
+	G = vec4(472,330,406,1);
+	H = vec4(314,330,456,1);
 
-	// // Front
-	// triangles.push_back( Triangle(E,B,A,blue) );
-	// triangles.push_back( Triangle(E,F,B,blue) );
+	// Front
+	triangles.push_back( Triangle(E,B,A,blue) );
+	triangles.push_back( Triangle(E,F,B,blue) );
 
-	// // Front
-	// triangles.push_back( Triangle(F,D,B,blue) );
-	// triangles.push_back( Triangle(F,H,D,blue) );
+	// Front
+	triangles.push_back( Triangle(F,D,B,blue) );
+	triangles.push_back( Triangle(F,H,D,blue) );
 
-	// // BACK
-	// triangles.push_back( Triangle(H,C,D,blue) );
-	// triangles.push_back( Triangle(H,G,C,blue) );
+	// BACK
+	triangles.push_back( Triangle(H,C,D,blue) );
+	triangles.push_back( Triangle(H,G,C,blue) );
 
-	// // LEFT
-	// triangles.push_back( Triangle(G,E,C,blue) );
-	// triangles.push_back( Triangle(E,A,C,blue) );
+	// LEFT
+	triangles.push_back( Triangle(G,E,C,blue) );
+	triangles.push_back( Triangle(E,A,C,blue) );
 
-	// // TOP
-	// triangles.push_back( Triangle(G,F,E,blue) );
-	// triangles.push_back( Triangle(G,H,F,blue) );
+	// TOP
+	triangles.push_back( Triangle(G,F,E,blue) );
+	triangles.push_back( Triangle(G,H,F,blue) );
 
 
 	// ----------------------------------------------
