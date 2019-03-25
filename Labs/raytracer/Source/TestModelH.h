@@ -39,10 +39,10 @@ class Circle {
 		glm::vec4 center;
 		float radius;
 		glm::vec3 color;
-		glm::vec3 normal;
+		bool isGlass;
 		
-		Circle( glm::vec4 center, float radius, glm::vec3 color)
-			: center(center), radius(radius), color(color) {}
+		Circle( glm::vec4 center, float radius, glm::vec3 color, bool isGlass)
+			: center(center), radius(radius), color(color), isGlass(isGlass) {}
 };
 
 // Loads the Cornell Box. It is scaled to fill the volume:
@@ -70,9 +70,9 @@ void LoadCircles( std::vector<Circle>& circles ) {
 	vec4 B(323,330,247,1);
 	vec4 C(423,330,247,1);
 
-	circles.push_back(Circle(A, 60, white));
-	circles.push_back(Circle(B, 20, cyan));
-	circles.push_back(Circle(C, 60, yellow));
+	circles.push_back(Circle(A, 60, white, false));
+	circles.push_back(Circle(B, 20, cyan, false));
+	circles.push_back(Circle(C, 60, yellow, true));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
