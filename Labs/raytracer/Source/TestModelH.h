@@ -66,12 +66,12 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	float L = 555;
 
-	vec4 A(223,330,247,1);
-	vec4 B(323,330,247,1);
-	vec4 C(423,330,247,1);
+	vec4 A(433,330,247,1);
+	vec4 B(323,330,147,1);
+	vec4 C(233,330,147,1);
 
-	circles.push_back(Circle(A, 60, white, false));
-	circles.push_back(Circle(B, 20, cyan, false));
+	circles.push_back(Circle(A, 60, white, true));
+	circles.push_back(Circle(B, 20, cyan, true));
 	circles.push_back(Circle(C, 60, yellow, true));
 
 	for( uint i=0; i<circles.size(); ++i )
