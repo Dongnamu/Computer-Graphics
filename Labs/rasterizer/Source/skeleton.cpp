@@ -473,6 +473,20 @@ void DrawPolygon(screen* screen, const vector<vec4>& vertices, vector<Vertex>& v
   DrawRows(screen, leftPixels, rightPixels);
 }
 
+void toVec3(const vec4 x){
+  return vec3(x[0], x[1]. x[2]);
+}
+
+void toVec4(const vec3 x) {
+  return vec4(x.x, x.y, x.z, 1);
+}
+
+void createCoordinateSystem(const vec4 &N, vec4 &Nt, vec4 &Nb){
+  if (std::fabs(N[0]) > std::fabs(N[1])){
+    Nt = vec4(N[2], 0, -N[0], 0) / sqrt(N[0] * N[0] + )
+  }
+}
+
 
 void Update()
 {

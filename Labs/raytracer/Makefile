@@ -1,4 +1,4 @@
-FILE=skeleton
+FILE=photonMap
 
 ########
 #   Directories
