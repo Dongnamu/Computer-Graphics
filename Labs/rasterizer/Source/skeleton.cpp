@@ -82,9 +82,8 @@ Current current = {
 };
 
 Camera camera = {
-  .position = vec4(0,0,-3.001, 1.0),
-  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
-  // .center = vec3(0.003724, 0.929729, 0.07459)
+  .position = vec4(0,0,0, 1.0),
+  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,1.8,1)),  // .center = vec3(0.003724, 0.929729, 0.07459)
   .center = vec3(0,0,0)
 };
 
@@ -432,7 +431,7 @@ void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary,
 }
 
 void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
-  vertex.position = camera.basis *(v - camera.position);
+  vertex.position = camera.basis * v;
   p.zinv = 1/vertex.position[2];
   p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
   p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
@@ -664,7 +663,6 @@ void Update()
   std::cout << "Render time: " << dt << " ms." << std::endl;
   /* Update variables*/
   SDL_Event e;
-  mat4 translation(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
 
   while(SDL_PollEvent(&e))
   {
@@ -675,73 +673,65 @@ void Update()
         break;
       case SDLK_UP:
         // Move camera forward
-        translation[3][2] = 0.1;
-        camera.position = translation*camera.position;
+        camera.basis[3][2] -= 0.1;
         break;
       case SDLK_DOWN:
       // Move camera backward
-        translation[3][2] = -0.1;
-        camera.position = translation*camera.position;
+        camera.basis[3][2] += 0.1;
         break;
       case SDLK_LEFT:
       // Move camera to the left
-        translation[3][0] = -0.1;
-        camera.position = translation*camera.position;
+        camera.basis[3][0] += 0.1;
         break;
       case SDLK_RIGHT:
       // Move camera to the right
-        translation[3][0] = 0.1;
-        camera.position = translation*camera.position;
+        camera.basis[3][0] -= 0.1;
         break;
       case SDLK_n:
-        translation[3][1] = -0.1;
-        camera.position = translation*camera.position;
+        camera.basis[3][1] += 0.1;
         break;
       case SDLK_m:
-        translation[3][1] = 0.1;
-        camera.position = translation * camera.position;
+        camera.basis[3][1] -= 0.1;
         break;
       case SDLK_d:
         // Rotate camera right;
-        camera.basis = translation * generateRotation(vec3(0, yaw, 0)) * camera.basis;
-        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, yaw, 0)) * camera.position;
+        camera.basis =  generateRotation(vec3(0, -yaw, 0)) * camera.basis;
+        if (is_lookAt) camera.position =  generateRotation(vec3(0, -yaw, 0)) * camera.position;
         break;
       case SDLK_a:
         // Rotate camera left;
-        camera.basis = translation * generateRotation(vec3(0, -yaw, 0)) * camera.basis;
-        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, -yaw, 0)) * camera.position;
+        camera.basis =  generateRotation(vec3(0, yaw, 0)) * camera.basis;
+        if (is_lookAt) camera.position =  generateRotation(vec3(0, yaw, 0)) * camera.position;
 
         break;
       case SDLK_w:
         // Rotate camera top;
-        camera.basis = translation * generateRotation(vec3(yaw, 0, 0)) * camera.basis;
-        if (is_lookAt) camera.position = translation * generateRotation(vec3(yaw, 0, 0)) * camera.position;
+        camera.basis =  generateRotation(vec3(yaw, 0, 0)) * camera.basis;
+        if (is_lookAt) camera.position =  generateRotation(vec3(yaw, 0, 0)) * camera.position;
 
         break;
       case SDLK_s:
         // Rotate camera down;
-        camera.basis = translation * generateRotation(vec3(-yaw, 0, 0)) * camera.basis;
-        if (is_lookAt) camera.position = translation * generateRotation(vec3(-yaw, 0, 0)) * camera.position;
+        camera.basis =  generateRotation(vec3(-yaw, 0, 0)) * camera.basis;
+        if (is_lookAt) camera.position =  generateRotation(vec3(-yaw, 0, 0)) * camera.position;
         break;
       case SDLK_q:
-        camera.basis = translation * generateRotation(vec3(0, 0, -yaw)) * camera.basis;
-        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, 0, -yaw)) * camera.position;
+        camera.basis =  generateRotation(vec3(0, 0, -yaw)) * camera.basis;
+        if (is_lookAt) camera.position =  generateRotation(vec3(0, 0, -yaw)) * camera.position;
         break;
       case SDLK_e:
-        camera.basis = translation * generateRotation(vec3(0, 0, yaw)) * camera.basis;
-        if (is_lookAt) camera.position = translation * generateRotation(vec3(0, 0, yaw)) * camera.position;
+        camera.basis =  generateRotation(vec3(0, 0, yaw)) * camera.basis;
+        if (is_lookAt) camera.position =  generateRotation(vec3(0, 0, yaw)) * camera.position;
         break;
       case SDLK_l:
         if (is_lookAt) is_lookAt = false;
         else is_lookAt = true;
         break;
       case SDLK_u:
-        // light.position += vec4(0, 0, 0.1, 0);
-        depth += 0.1;
+        light.position += vec4(0, 0, 0.1, 0);
         break;
       case SDLK_j:
-        // light.position += vec4(0,0,-0.1,0);
-        depth -= 0.1;
+        light.position += vec4(0,0,-0.1,0);
         break;
       case SDLK_h:
         light.position += vec4(-0.1, 0, 0, 0);
