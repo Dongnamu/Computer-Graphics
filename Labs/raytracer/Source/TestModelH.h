@@ -100,7 +100,7 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	// circles.push_back(Circle(A, 60, white, true, diffuse));
 	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
-	circles.push_back(Circle(C, 60, yellow, true, diffuse));
+	circles.push_back(Circle(C, 60, yellow, true, specular));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
@@ -185,25 +185,25 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	G = vec4(240,165,272,1);
 	H = vec4( 82,165,225,1);
 
-	// // Front
-	// triangles.push_back( Triangle(E,B,A,red) );
-	// triangles.push_back( Triangle(E,F,B,red) );
+	// Front
+	triangles.push_back( Triangle(E,B,A,red) );
+	triangles.push_back( Triangle(E,F,B,red) );
 
-	// // Front
-	// triangles.push_back( Triangle(F,D,B,red) );
-	// triangles.push_back( Triangle(F,H,D,red) );
+	// Front
+	triangles.push_back( Triangle(F,D,B,red) );
+	triangles.push_back( Triangle(F,H,D,red) );
 
-	// // BACK
-	// triangles.push_back( Triangle(H,C,D,red) );
-	// triangles.push_back( Triangle(H,G,C,red) );
+	// BACK
+	triangles.push_back( Triangle(H,C,D,red) );
+	triangles.push_back( Triangle(H,G,C,red) );
 
-	// // LEFT
-	// triangles.push_back( Triangle(G,E,C,red) );
-	// triangles.push_back( Triangle(E,A,C,red) );
+	// LEFT
+	triangles.push_back( Triangle(G,E,C,red) );
+	triangles.push_back( Triangle(E,A,C,red) );
 
-	// // TOP
-	// triangles.push_back( Triangle(G,F,E,red) );
-	// triangles.push_back( Triangle(G,H,F,red) );
+	// TOP
+	triangles.push_back( Triangle(G,F,E,red) );
+	triangles.push_back( Triangle(G,H,F,red) );
 
 	// ---------------------------------------------------------------------------
 	// Tall block

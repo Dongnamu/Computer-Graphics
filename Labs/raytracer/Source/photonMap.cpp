@@ -20,6 +20,8 @@ using glm::vec4;
 using glm::mat4;
 
 float maxFloat = std::numeric_limits<float>::max();
+float minFloat = std::numeric_limits<float>::min();
+
 
 
 struct Photon {
@@ -50,6 +52,12 @@ struct Camera{
   vec3 center;
 };
 
+struct Node{
+    Photon photon;
+    struct Node *left, *right;
+};
+
+
 const int SPECULAR = 0;
 const int ABSORPTION = 1;
 const int DIFFUSE = 2;
@@ -58,7 +66,7 @@ const int TRANSMISSION = 3;
 #define PI 3.14159
 #define SCREEN_WIDTH 1080
 #define SCREEN_HEIGHT 1080
-#define FULLSCREEN_MODE true
+#define FULLSCREEN_MODE false
 
 
 mat4 R;
@@ -90,6 +98,7 @@ std::uniform_real_distribution<float> distributionz(light.position[2]-1, light.p
 std::uniform_real_distribution<float> distribution(0 , 1);
 
 
+
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire);
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index=-1);
 bool circleIntersection(vec4 start, vec4 dir, const vector<Circle>& circles, Intersection& closestIntersection, int within_index = -1, bool isInCircle = false);
@@ -105,7 +114,7 @@ vec4 specularReflection(vec4& normal, vec4& incoming);
 void Update();
 void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons, const vector<Circle>& circles);
 void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material);
-
+void createkdTree(vector<Photon>& kdTree, vector<Photon>& photons);
 
 mat4 generateRotation(vec3 a);
 
@@ -118,15 +127,25 @@ int main(){
     LoadTestModel(triangles);
     LoadCircles(circles);
     startPhotons(photons, triangles, circles);
+    vector<Photon> kdTree;
     printf("STORED PHOTONS: %d\n", photons.size());
-
-      while( !escape )
-    {
-      Update();
-      Draw(screen, triangles, photons, circles);
-      SDL_Renderframe(screen);
+    for (uint i = 0; i < photons.size(); i++){
+        std::cout<<glm::to_string(photons[i].hitPos)<<std::endl;
     }
 
+    createkdTree(kdTree, photons);
+    printf("KDTREE: %d\n", kdTree.size());
+    for (uint i = 0; i < kdTree.size(); i++){
+        std::cout<<glm::to_string(kdTree[i].hitPos)<<std::endl;
+    }
+
+
+    //   while( !escape )
+    // {
+    //   Update();
+    //   Draw(screen, triangles, photons, circles);
+    //   SDL_Renderframe(screen);
+    // }
 }
 
 void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons, const vector<Circle>& circles)
@@ -141,6 +160,91 @@ void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon
     }
 
 }
+
+int getMaximumDimension( vector<Photon>& photons){
+    float difference = minFloat;
+    int dim = -1;
+
+    for (int dimension = 0; dimension < 3; dimension++){
+        float max = minFloat; 
+        float min = maxFloat; 
+
+        for (uint i = 0; i < photons.size(); i++){
+            if (photons[i].hitPos[dimension] > max) max = photons[i].hitPos[dimension];
+            if (photons[i].hitPos[dimension] < min) min = photons[i].hitPos[dimension];
+        }
+        if (max - min > difference) {
+            difference = max-min;
+            dim = dimension;
+        }
+    }
+
+    return dim;
+}
+
+void swap(Photon *a, Photon *b){
+    Photon temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+int partition(vector <Photon> &photons, int dim, int low, int high){
+    int pivot = photons[high].hitPos[dim];
+    int i = (low - 1);
+
+    for (int j = low; j <= high-1; j++)
+    {
+        if (photons[j].hitPos[dim] <= pivot)
+        {
+            i++;
+            swap(&photons[i], &photons[j]);
+        }
+    }
+    swap(&photons[i+1], &photons[high]);
+    return (i + 1);
+}
+void quickSort(vector<Photon> &photons, int dim, int low, int high){
+    if (low < high) 
+    {
+        int pi = partition(photons, dim, low, high);
+        quickSort(photons, dim, low, pi-1);
+        quickSort(photons, dim, pi+1, high);
+    }
+}
+
+int calculateMedian(vector<Photon> photons, int& dim){
+    quickSort(photons, dim,  0, photons.size()-1);
+    return floor(photons.size()/2);
+
+}
+void createkdTree(vector<Photon>& kdTree,  vector<Photon>& photons){
+    if (photons.size() == 0) return;
+
+    int dim = getMaximumDimension(photons);
+
+
+    int median = calculateMedian(photons, dim);
+
+    kdTree.push_back(photons[median]);
+
+    vector <Photon> left;
+    vector <Photon> right;
+
+    for (uint i = 0; i < photons.size(); i++){
+        if (i < median){
+            left.push_back(photons[i]);
+        }
+        if (i > median){
+            right.push_back(photons[i]);
+        }
+    }
+
+    createkdTree(kdTree, left);
+    createkdTree(kdTree, right);
+
+    return;
+};
+
 
 
 
@@ -158,7 +262,7 @@ vec4 calculateLightDirection(){
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles) {
-    int numberOfPhotons = 200000;
+    int numberOfPhotons = 5;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;
@@ -211,7 +315,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
             objectMaterial = circles[i.circleIndex].material;
         }
 
-        if (isCircle) std::cout<<glm::to_string(objectNormal)<<std::endl;
+        // if (isCircle) std::cout<<glm::to_string(objectNormal)<<std::endl;
 
         // HERE IS WHERE THE DIFFERENT BOUNCES WILL HAPPEN ONLY STORE WHEN PHOTON HITS A DIFFUSE
         switch (bounceType(photon, objectMaterial))
@@ -235,10 +339,9 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                     photon.phi = (unsigned char)phi;
                 // printf("DIFFUSE\n");
                 photon.hitPos = i.position;
-                if (isCircle && n_fire == 2){
+                photons.push_back(photon);
+
                     
-                    photons.push_back(photon);
-                }
                 Photon newPhoton;
                 scalePower(DIFFUSE, photon, newPhoton, objectMaterial);
                 vec4 outDir = diffuseDirection(objectNormal);
@@ -248,6 +351,8 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
             }
             case SPECULAR:
             {
+                photon.hitPos = i.position;
+
                 Photon newPhoton;
                 scalePower(SPECULAR, photon, newPhoton, objectMaterial);
                 vec4 outDir = specularReflection(objectNormal, d);
@@ -376,7 +481,7 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
 
     if ((pow(b,2) - 4 * a * c) < 0) continue;
 
-    if (within_index == 2 && (pow(b,2) - 4 * a * c) > 0) printf("I'm here");
+    // if (within_index == 2 && (pow(b,2) - 4 * a * c) > 0) printf("I'm here");
     
     
 
