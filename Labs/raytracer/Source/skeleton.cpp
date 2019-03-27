@@ -8,7 +8,6 @@
 #include "random"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
-#include "photonMap.hpp"
 
 
 using namespace std;

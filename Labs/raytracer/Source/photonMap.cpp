@@ -10,6 +10,7 @@
 #include <glm/gtx/string_cast.hpp>
 
 
+
 using namespace std;
 using glm::vec3;
 using glm::mat3;
@@ -38,19 +39,43 @@ struct Intersection
   int triangleIndex;
 };
 
+struct Camera{
+  vec4 position;
+  mat4 basis;
+  vec3 center;
+};
+
 const int SPECULAR = 0;
 const int ABSORPTION = 1;
 const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
+#define FULLSCREEN_MODE true
 
+
+mat4 R;
+bool escape = false;
+
+
+float focal_length = SCREEN_HEIGHT / 2;
 
 
 Light light = {
   .position = vec4(0, -0.7, -0.7, 1.0),
-  .color =  14.f * vec3(1,1,1),
+  .color =  50.f * vec3(1,1,1),
 };
+
+Camera camera = {
+  .position = vec4(0,0,0, 1.0),
+  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0, 2, 1.0)),
+  // .center = vec3(0.003724, 0.929729, 0.07459)
+  .center = vec3(0,0,0)
+};
+
+float yaw = 2 * PI / 180;
 
 // DEFINE DISTRIBUTIONS
 std::default_random_engine generator;
@@ -71,16 +96,41 @@ vec4 toVec4(const vec3 x);
 vec3 toVec3(const vec4 x);
 vec4 diffuseDirection(Triangle& triangle);
 vec4 specularReflection(Triangle& triangle, vec4& incoming);
+void Update();
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons);
+mat4 generateRotation(vec3 a);
 
+int main(){
+    screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
 
-int main_(){
     vector<Triangle> triangles;
     LoadTestModel(triangles);
     vector<Photon> photons;
     startPhotons(photons, triangles);
     printf("STORED PHOTONS: %d\n", photons.size());
 
+      while( !escape )
+    {
+      Update();
+      Draw(screen, triangles, photons);
+      SDL_Renderframe(screen);
+    }
+
 }
+
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons)
+{
+  /* Clear buffer */
+    memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+    for (uint photon = 0; photon < photons.size(); photon++){
+        vec4 photonPos = camera.basis * photons[photon].hitPos; 
+        float u = focal_length * photonPos.x/photonPos.z + SCREEN_HEIGHT/2;
+        float v = focal_length * photonPos.y/photonPos.z + SCREEN_HEIGHT/2;
+        PutPixelSDL(screen, u, v, photons[photon].color);
+    }
+
+}
+
 
 
 vec4 calculateLightDirection(){
@@ -97,7 +147,7 @@ vec4 calculateLightDirection(){
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles) {
-    int numberOfPhotons = 150000;
+    int numberOfPhotons = 200000;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;
@@ -128,16 +178,20 @@ void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon&
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles){
     Intersection i;
     if (photon.color.x < 0.1 && photon.color.y < 0.1 && photon.color.z < 0.1) {
-        // printf("DEAD PHOTON\n");
+        printf("DEAD PHOTON\n");
         return;
     }
     if (ClosestIntersection(s, d, triangles, i)){
+        std::cout<<glm::to_string(photon.color)<<std::endl;
+
         Triangle hitTriangle = triangles[i.triangleIndex];
         // HERE IS WHERE THE DIFFERENT BOUNCES WILL HAPPEN ONLY STORE WHEN PHOTON HITS A DIFFUSE
         switch (bounceType(photon, hitTriangle))
         {
             case DIFFUSE: 
             {
+                photon.color *= hitTriangle.color;
+
                 int theta = int(acos(d[2])*(256.0/PI) );
                 if (theta>255)
                     photon.theta = 255;
@@ -171,7 +225,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                 break;
             }
             case ABSORPTION:
-                //printf("ABSORPTION\n");
+                printf("ABSORPTION\n");
                 break;
             default:
                 break;
@@ -311,4 +365,98 @@ vec4 specularReflection(Triangle& triangle, vec4& incoming) {
     return normalize(reflectedDirection);
 }
 
+mat4 generateRotation(vec3 a){
+  vec4 uno = vec4(cos(a[1])*cos(a[2]), cos(a[1])*sin(a[2]), -sin(a[1]), 0);
+  vec4 dos = vec4(-cos(a[0])*sin(a[2]) + sin(a[0]*sin(a[1])*cos(a[2])), cos(a[0])*cos(a[2])+sin(a[0])*sin(a[1])*sin(a[2]), sin(a[0])*cos(a[1]), 0);
+  vec4 tres = vec4(sin(a[0])*sin(a[2])+cos(a[0])*sin(a[1])*cos(a[2]), -sin(a[0])*cos(a[2])+cos(a[0])*sin(a[1])*sin(a[2]), cos(a[0])*cos(a[1]), 0);
+  vec4 cuatro = vec4(0,0,0,1);
+  return (mat4(uno, dos, tres, cuatro));
+}
 
+
+
+void Update()
+{
+  static int t = SDL_GetTicks();
+  /* Compute frame time */
+  int t2 = SDL_GetTicks();
+  float dt = float(t2-t);
+  t = t2;
+  /*Good idea to remove this*/
+  std::cout << "Render time: " << dt << " ms." << std::endl;
+  /* Update variables*/
+  SDL_Event e;
+  mat4 translation(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
+
+  while(SDL_PollEvent(&e))
+  {
+    if (e.type == SDL_KEYDOWN){
+        switch (e.key.keysym.sym) {
+            case SDLK_ESCAPE:
+                escape = true;
+                break;
+            case SDLK_UP:
+                // Move camera forward
+                camera.basis[3][2] += 0.1;
+                break;
+            case SDLK_DOWN:
+            // Move camera backward
+                camera.basis[3][2] += -0.1;
+                break;
+            case SDLK_LEFT:
+            // Move camera to the left
+                camera.basis[3][0] += -0.1;
+                break;
+            case SDLK_RIGHT:
+            // Move camera to the right
+                camera.basis[3][0] += 0.1;
+                break;
+            case SDLK_n:
+                camera.basis[3][1] += -0.1;
+                break;
+            case SDLK_m:
+                camera.basis[3][1] += 0.1;
+                break;
+            case SDLK_d:
+                //Rotate camera right;
+                camera.basis =  generateRotation(vec3(0, yaw, 0)) * camera.basis;
+                break;
+            case SDLK_a:
+                //Rotate camera left;
+                camera.basis =  generateRotation(vec3(0, -yaw, 0)) * camera.basis;
+
+                break;
+            case SDLK_w:
+                //Rotate camera top;
+                camera.basis =  generateRotation(vec3(yaw, 0, 0)) * camera.basis;
+
+                break;
+            case SDLK_s:
+                //Rotate camera down;
+                camera.basis =  generateRotation(vec3(-yaw, 0, 0)) * camera.basis;
+                break;
+            case SDLK_q:
+                // camera.basis =  generateRotation(vec3(0, 0, -yaw)) * camera.basis;
+                break;
+            case SDLK_e:
+                // camera.basis =  generateRotation(vec3(0, 0, yaw)) * camera.basis;
+                break;
+
+            case SDLK_u:
+                light.position += vec4(0, 0, 0.1, 0);
+                break;
+            case SDLK_j:
+                light.position += vec4(0,0,-0.1,0);
+                break;
+            case SDLK_h:
+                light.position += vec4(-0.1, 0, 0, 0);
+                break;
+            case SDLK_k:
+                light.position += vec4(0.1, 0, 0, 0);
+                break;
+            default:
+                break;
+            }
+   }
+ }
+}
