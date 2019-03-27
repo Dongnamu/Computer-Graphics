@@ -15,9 +15,9 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 500
-#define SCREEN_HEIGHT 500
-#define FULLSCREEN_MODE false
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
+#define FULLSCREEN_MODE true
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -32,7 +32,7 @@ struct Intersection
   float distance;
   bool isTriangle;
   int circleIndex;
-  vec3 circleNormal;
+  vec4 circleNormal;
   int triangleIndex;
 };
 
@@ -43,8 +43,17 @@ struct Camera{
 };
 
 struct Light{
-    vec4 position;
-    vec3 color;
+  vec4 position;
+  vec3 color;
+};
+
+struct SpotLight {
+  vec4 position;
+  vec3 color;
+  vec4 direction;
+  float cosineCutoff;
+  float exponent;
+  
 };
 
 // vec4 cameraPos(0, 0, -2, 1.0);
@@ -58,13 +67,13 @@ mat4 R;
 
 void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt);
 void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
-bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection);
+bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection);
 bool circleIntersection(vec4 start, vec4 dir, const vector<Circle>& circles, Intersection& closestIntersection, int within_index = -1, bool isInCircle = false);
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
-vec3 calNormal(const Intersection& i, const vector<Circle>& circles);
-vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles);
+vec4 calNormal(const Intersection& i, const vector<Circle>& circles);
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
 vec3 circleDirectLight(Light &light, const Intersection& i, const vector<Circle>& circle);
 vec3 circleRefract(const vec4& d, const Intersection& incident, const float& indexOfRefraction);
 void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, vector<Circle>& circles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
@@ -102,7 +111,7 @@ int main( int argc, char* argv[] )
   };
 
   Light light = {
-    .position = vec4(0, -0.5, -0.7, 1.0),
+    .position = vec4(0, 0.5, -0.7, 1.0),
     .color = 14.f * vec3(1,1,1),
   };
 
@@ -357,85 +366,88 @@ void processPart(Camera &camera, Light &light, vec3 *pixel_light_value, int loca
     for (int col = col_start; col < col_end; col++) {
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
       Intersection intersect;
-      if (ClosestIntersection(camera.position, d, triangles, intersect)){
-        vec3 light_power = DirectLight(light, intersect, triangles);
-        updateValues(col, row, pixel_light_value, local_ncols, pixel_color_value, local_cols, local_rows, row_start, col_start, triangles[intersect.triangleIndex].color, light_power);
+      if (ClosestIntersection(camera.position, d, triangles, circles, intersect)){
+        vec3 light_power = DirectLight(light, intersect, triangles, circles);
+        vec3 color(0,0,0);
+        if (intersect.isTriangle) color =  triangles[intersect.triangleIndex].color;
+        else color = circles[intersect.circleIndex].color;
+        updateValues(col, row, pixel_light_value, local_ncols, pixel_color_value, local_cols, local_rows, row_start, col_start, color, light_power);
       }
      
-      if (circleIntersection(camera.position, d, circles, intersect)) {
-        intersect.circleNormal = calNormal(intersect, circles);
+      // if (circleIntersection(camera.position, d, circles, intersect)) {
+      //   intersect.circleNormal = calNormal(intersect, circles);
         
-        if (!circles[intersect.circleIndex].isGlass) {
-          vec3 light_power = circleDirectLight(light, intersect, circles);
-          updateValues(col, row, pixel_light_value, local_ncols, pixel_color_value, local_cols, local_rows, row_start, col_start, circles[intersect.circleIndex].color, light_power);
+      //   if (!circles[intersect.circleIndex].isGlass) {
+      //     vec3 light_power = circleDirectLight(light, intersect, circles);
+      //     updateValues(col, row, pixel_light_value, local_ncols, pixel_color_value, local_cols, local_rows, row_start, col_start, circles[intersect.circleIndex].color, light_power);
         
-        } else {
+      //   } else {
 
-          vec3 light_power = vec3(0,0,0);
-          vec3 color = vec3(0,0,0);
+      //     vec3 light_power = vec3(0,0,0);
+      //     vec3 color = vec3(0,0,0);
 
-          vec3 offset = vec3(0.001, 0.001, 0.001) * intersect.circleNormal;
-          vec4 start_position = intersect.position - vec4(offset.x, offset.y, offset.z, 1);
+      //     vec3 offset = vec3(0.001, 0.001, 0.001) * intersect.circleNormal;
+      //     vec4 start_position = intersect.position - vec4(offset.x, offset.y, offset.z, 1);
 
-          vec3 refract = circleRefract(d, intersect, 1.5);
-          vec4 new_direction = vec4(refract.x, refract.y, refract.z, 1);     
+      //     vec3 refract = circleRefract(d, intersect, 1.5);
+      //     vec4 new_direction = vec4(refract.x, refract.y, refract.z, 1);     
 
-          circleRecursion(light, triangles, circles, start_position, new_direction, light_power, color, intersect.circleIndex, 1.5, true);
-          updateValues(col, row, pixel_light_value, local_ncols, pixel_color_value, local_cols, local_rows, row_start, col_start, color, light_power);
+      //     circleRecursion(light, triangles, circles, start_position, new_direction, light_power, color, intersect.circleIndex, 1.5, true);
+      //     updateValues(col, row, pixel_light_value, local_ncols, pixel_color_value, local_cols, local_rows, row_start, col_start, color, light_power);
 
-        }
-      }
+      //   }
+      // }
 
     }
   }
 }
 
-void circleRecursion(Light& light, const vector<Triangle>& triangles, const vector<Circle>& circles, const vec4& start_position, const vec4& new_direction, vec3 &light_power, vec3& color, const int& within_index, const float& ior, bool isInCircle) {
+// void circleRecursion(Light& light, const vector<Triangle>& triangles, const vector<Circle>& circles, const vec4& start_position, const vec4& new_direction, vec3 &light_power, vec3& color, const int& within_index, const float& ior, bool isInCircle) {
   
-  Intersection intersection;
+//   Intersection intersection;
 
 
-  if (isInCircle) {
+//   if (isInCircle) {
 
 
-    if (circleIntersection(start_position, new_direction, circles, intersection, within_index, true)) {
-      intersection.circleNormal = calNormal(intersection, circles);
+//     if (circleIntersection(start_position, new_direction, circles, intersection, within_index, true)) {
+//       intersection.circleNormal = calNormal(intersection, circles);
 
-      vec3 offset = vec3(0.001, 0.001, 0.001) * intersection.circleNormal;
+//       vec3 offset = vec3(0.001, 0.001, 0.001) * intersection.circleNormal;
 
-      vec4 next_start_position = intersection.position + vec4(offset.x, offset.y, offset.z, 1);
+//       vec4 next_start_position = intersection.position + vec4(offset.x, offset.y, offset.z, 1);
 
-      vec3 refract = circleRefract(new_direction, intersection, 1.5);
-      vec4 next_new_direction = vec4(refract.x, refract.y, refract.z, 1);
-      circleRecursion(light, triangles, circles, next_start_position, next_new_direction, light_power, color, intersection.circleIndex, 1.5, false);
+//       vec3 refract = circleRefract(new_direction, intersection, 1.5);
+//       vec4 next_new_direction = vec4(refract.x, refract.y, refract.z, 1);
+//       circleRecursion(light, triangles, circles, next_start_position, next_new_direction, light_power, color, intersection.circleIndex, 1.5, false);
       
-    } 
+//     } 
       
-  } else {
+//   } else {
 
-    if (ClosestIntersection(start_position, new_direction, triangles, intersection)) {
-        light_power = DirectLight(light, intersection, triangles);
-        color = triangles[intersection.triangleIndex].color;
-    } 
-    if (circleIntersection(start_position, new_direction, circles, intersection, within_index)) {
-      intersection.circleNormal = calNormal(intersection, circles);
+//     if (ClosestIntersection(start_position, new_direction, triangles, intersection)) {
+//         light_power = DirectLight(light, intersection, triangles);
+//         color = triangles[intersection.triangleIndex].color;
+//     } 
+//     if (circleIntersection(start_position, new_direction, circles, intersection, within_index)) {
+//       intersection.circleNormal = calNormal(intersection, circles);
 
-      if (!circles[intersection.circleIndex].isGlass) {
-        light_power = circleDirectLight(light, intersection, circles);
-        color = circles[intersection.circleIndex].color;
-      } else {
-        vec3 offset = vec3(0.001, 0.001, 0.001) * intersection.circleNormal;
-        vec4 next_start_position = intersection.position - vec4(offset.x, offset.y, offset.z, 1);
+//       if (!circles[intersection.circleIndex].isGlass) {
+//         light_power = circleDirectLight(light, intersection, circles);
+//         color = circles[intersection.circleIndex].color;
+//       } else {
+//         vec3 offset = vec3(0.001, 0.001, 0.001) * intersection.circleNormal;
+//         vec4 next_start_position = intersection.position - vec4(offset.x, offset.y, offset.z, 1);
 
-        vec3 refract = circleRefract(new_direction, intersection, 1.5);
-        vec4 next_new_direction = vec4(refract.x, refract.y, refract.z, 1);
+//         vec3 refract = circleRefract(new_direction, intersection, 1.5);
+//         vec4 next_new_direction = vec4(refract.x, refract.y, refract.z, 1);
 
-        circleRecursion(light, triangles, circles, next_start_position, next_new_direction, light_power, color, intersection.circleIndex, 1.5, true);
+//         circleRecursion(light, triangles, circles, next_start_position, next_new_direction, light_power, color, intersection.circleIndex, 1.5, true);
         
-      }
-    }
-  }
-}
+//       }
+//     }
+//   }
+// }
 
 void updateValues(int col, int row, vec3* pixel_light_value, int local_ncols, vec3* pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& col_start, const vec3& color, const vec3 light_power) {
   pixel_light_value[(col - col_start) + (row - row_start) * local_ncols] = light_power;
@@ -460,7 +472,7 @@ mat4 lookAt(vec3 from, vec3 to) {
   return camToWorld;
 }
 
-bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection){
+bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection){
 
   closestIntersection.distance = maxFloat;
   // float current = closestIntersection.distance;
@@ -512,6 +524,8 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
       }
     }
   }
+
+  circleIntersection(s, d, circles, closestIntersection);
 
   if (closestIntersection.distance == maxFloat) return false;
   return true;
@@ -596,21 +610,31 @@ vec3 calD(vec3 r, vec3 n, vec3 power, float radius) {
 
 }
 
-vec3 calNormal(const Intersection& i, const vector<Circle>& circles) {
-  return normalize(vec3(i.position - circles[i.circleIndex].center));
+vec4 calNormal(const Intersection& i, const vector<Circle>& circles) {
+  return normalize(i.position - circles[i.circleIndex].center);
 }
 
-vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles) {
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles) {
 
-  vec3 n(triangles[i.triangleIndex].normal.x, triangles[i.triangleIndex].normal.y, triangles[i.triangleIndex].normal.z);
+  if (i.isTriangle) {
+    vec3 n(triangles[i.triangleIndex].normal.x, triangles[i.triangleIndex].normal.y, triangles[i.triangleIndex].normal.z);
 
-  vec3 x = normalize(n);
+    vec3 x = normalize(n);
 
-  vec3 r = normalize(light.position - i.position);
+    vec3 r = normalize(light.position - i.position);
 
-  float radius = glm::distance(light.position, i.position);
+    float radius = glm::distance(light.position, i.position);
 
-  return calD(r, x, light.color, radius);
+    return calD(r, x, light.color, radius);
+  } else {
+    vec4 normal4 = calNormal(i, circles);
+    vec3 normal = vec3(normal4);
+    vec3 r = normalize(light.position - i.position);
+
+    float radius = glm::distance(light.position, i.position);
+
+    return calD(r, normal, light.color, radius);  
+  }
 }
 
 vec3 circleDirectLight(Light& light, const Intersection& i, const vector<Circle>& circles) {
