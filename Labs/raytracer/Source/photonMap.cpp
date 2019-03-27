@@ -11,6 +11,8 @@
 
 
 
+
+
 using namespace std;
 using glm::vec3;
 using glm::mat3;
@@ -23,7 +25,7 @@ float maxFloat = std::numeric_limits<float>::max();
 struct Photon {
     vec4 hitPos;
     vec3 color;
-    char phi, theta;
+    char phi, theta; 
     short flag;
 };
 
@@ -36,6 +38,9 @@ struct Intersection
 {
   vec4 position;
   float distance;
+  bool isTriangle;
+  int circleIndex;
+  vec4 circleNormal;
   int triangleIndex;
 };
 
@@ -65,7 +70,7 @@ float focal_length = SCREEN_HEIGHT / 2;
 
 Light light = {
   .position = vec4(0, -0.7, -0.7, 1.0),
-  .color =  50.f * vec3(1,1,1),
+  .color =  50.f * vec3(0.5,0.5,0.5),
 };
 
 Camera camera = {
@@ -85,40 +90,46 @@ std::uniform_real_distribution<float> distributionz(light.position[2]-1, light.p
 std::uniform_real_distribution<float> distribution(0 , 1);
 
 
-void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles);
-bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection, int index=-1);
-void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles);
+void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire);
+bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index=-1);
+bool circleIntersection(vec4 start, vec4 dir, const vector<Circle>& circles, Intersection& closestIntersection, int within_index = -1, bool isInCircle = false);
+void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles);
 vec4 calculateLightDirection();
-int bounceType(const Photon &photon, const Triangle& triangle);
+int bounceType(const Photon &photon, const Material& material);
 vec3 sampleDirectionVector(const float &r1, const float &r2);
 void createCoordinateSystem(const vec3 &N, vec3 &Nt, vec3 &Nb);
 vec4 toVec4(const vec3 x);
 vec3 toVec3(const vec4 x);
-vec4 diffuseDirection(Triangle& triangle);
-vec4 specularReflection(Triangle& triangle, vec4& incoming);
+vec4 diffuseDirection(vec4& normal);
+vec4 specularReflection(vec4& normal, vec4& incoming);
 void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons);
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons, const vector<Circle>& circles);
+void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material);
+
+
 mat4 generateRotation(vec3 a);
 
 int main(){
     screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
 
     vector<Triangle> triangles;
-    LoadTestModel(triangles);
     vector<Photon> photons;
-    startPhotons(photons, triangles);
+    vector<Circle> circles;
+    LoadTestModel(triangles);
+    LoadCircles(circles);
+    startPhotons(photons, triangles, circles);
     printf("STORED PHOTONS: %d\n", photons.size());
 
       while( !escape )
     {
       Update();
-      Draw(screen, triangles, photons);
+      Draw(screen, triangles, photons, circles);
       SDL_Renderframe(screen);
     }
 
 }
 
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons)
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons, const vector<Circle>& circles)
 {
   /* Clear buffer */
     memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
@@ -146,7 +157,7 @@ vec4 calculateLightDirection(){
 
 }
 
-void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles) {
+void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles) {
     int numberOfPhotons = 200000;
 
     for (int i = 0; i < numberOfPhotons; i++){
@@ -154,43 +165,60 @@ void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles) {
         photon.color = light.color;
 
         vec4 direction = calculateLightDirection();
-        firePhoton(light.position, direction, photons, photon, triangles);
+        firePhoton(light.position, direction, photons, photon, triangles, circles, 1);
 
     }
 
 }
 
-void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Triangle& triangle){
+void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material){
     switch (reflectionType)
     {
         case DIFFUSE:
             /* code */
-            outwardsPhoton.color = incomingPhoton.color * triangle.material.diffuse;
+            outwardsPhoton.color = incomingPhoton.color * material.diffuse;
             break;
         case SPECULAR:
-            outwardsPhoton.color = incomingPhoton.color * triangle.material.specular;
+            outwardsPhoton.color = incomingPhoton.color * material.specular;
         default:
             break;
     }
 }
 
 
-void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles){
+void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire){
     Intersection i;
     if (photon.color.x < 0.1 && photon.color.y < 0.1 && photon.color.z < 0.1) {
-        printf("DEAD PHOTON\n");
+        // printf("DEAD PHOTON\n");
         return;
     }
-    if (ClosestIntersection(s, d, triangles, i)){
-        std::cout<<glm::to_string(photon.color)<<std::endl;
+    if (ClosestIntersection(s, d, triangles, circles, i, n_fire)){
+        vec4 objectNormal;
+        vec3 objectColor;
+        Material objectMaterial;
+        bool isCircle = false;
+        // if (i.isTriangle) return;
+        if (i.isTriangle) {
+            objectNormal = triangles[i.triangleIndex].normal;
+            objectColor = triangles[i.triangleIndex].color;
+            objectMaterial = triangles[i.triangleIndex].material;
+        }
+        else {
+            isCircle = true;
+            // printf("CIRCLE\n");
+            objectNormal = i.circleNormal;
+            objectColor = circles[i.circleIndex].color;
+            objectMaterial = circles[i.circleIndex].material;
+        }
 
-        Triangle hitTriangle = triangles[i.triangleIndex];
+        if (isCircle) std::cout<<glm::to_string(objectNormal)<<std::endl;
+
         // HERE IS WHERE THE DIFFERENT BOUNCES WILL HAPPEN ONLY STORE WHEN PHOTON HITS A DIFFUSE
-        switch (bounceType(photon, hitTriangle))
+        switch (bounceType(photon, objectMaterial))
         {
             case DIFFUSE: 
             {
-                photon.color *= hitTriangle.color;
+                photon.color *= objectColor;
 
                 int theta = int(acos(d[2])*(256.0/PI) );
                 if (theta>255)
@@ -205,27 +233,30 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                     photon.phi = (unsigned char)(phi+256);
                 else
                     photon.phi = (unsigned char)phi;
-                printf("DIFFUSE\n");
+                // printf("DIFFUSE\n");
                 photon.hitPos = i.position;
-                photons.push_back(photon);
+                if (isCircle && n_fire == 2){
+                    
+                    photons.push_back(photon);
+                }
                 Photon newPhoton;
-                scalePower(DIFFUSE, photon, newPhoton, hitTriangle);
-                vec4 outDir = diffuseDirection(hitTriangle);
-                firePhoton(i.position + toVec4(outDir) * 0.001f, outDir, photons, newPhoton, triangles);
+                scalePower(DIFFUSE, photon, newPhoton, objectMaterial);
+                vec4 outDir = diffuseDirection(objectNormal);
+                firePhoton(i.position + toVec4(outDir) * 0.1f, outDir, photons, newPhoton, triangles, circles, n_fire + 1);
                 /* code */
                 break;
             }
             case SPECULAR:
             {
                 Photon newPhoton;
-                scalePower(SPECULAR, photon, newPhoton, hitTriangle);
-                vec4 outDir = specularReflection(hitTriangle, d);
-                firePhoton(i.position, outDir, photons, newPhoton, triangles);
-                printf("SPECULAR\n");
+                scalePower(SPECULAR, photon, newPhoton, objectMaterial);
+                vec4 outDir = specularReflection(objectNormal, d);
+                firePhoton(i.position, outDir, photons, newPhoton, triangles, circles, n_fire + 1);
+                // printf("SPECULAR\n");
                 break;
             }
             case ABSORPTION:
-                printf("ABSORPTION\n");
+                // printf("ABSORPTION\n");
                 break;
             default:
                 break;
@@ -238,15 +269,15 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
 
 }
 
-int bounceType(const Photon &photon, const Triangle& triangle) {
+int bounceType(const Photon &photon, const Material& material) {
     float randomNumber = distribution(generator);
-    if (randomNumber < triangle.material.specular) {
+    if (randomNumber < material.specular) {
         return SPECULAR;
-    } else if (randomNumber < triangle.material.specular + triangle.material.refraction){
+    } else if (randomNumber < material.specular + material.refraction){
         return TRANSMISSION;
-    } else if (randomNumber < triangle.material.specular + triangle.material.refraction + triangle.material.absorption){
+    } else if (randomNumber < material.specular + material.refraction + material.absorption){
         return ABSORPTION;
-    } else if (randomNumber <= triangle.material.specular + triangle.material.refraction + triangle.material.absorption + triangle.material.diffuse){
+    } else if (randomNumber <= material.specular + material.refraction + material.absorption + material.diffuse){
         return DIFFUSE;
     } else {
         printf("THERE WAS AN ERROR AT BOUNCE TYPE\n");
@@ -257,18 +288,17 @@ int bounceType(const Photon &photon, const Triangle& triangle) {
 
 
 
-
-bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection, int index){
+bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index){
 
   closestIntersection.distance = maxFloat;
-
+  // float current = closestIntersection.distance;
   for(uint i = 0; i < triangles.size(); i++){
-    if (index > -1) {
-      if (index == i) continue;
-      if (dot(normalize(triangles[index].normal), normalize(d)) < 0) continue;
-      // float angle = acos(dot(normalize(triangles[i].normal),normalize(d)))/abs(dot(normalize(triangles[i].normal),normalize(d)));
-      // if (angle >=  1.5708) continue;
-    }
+    // if (index > -1) {
+    //   if (index == i) continue;
+    //   if (dot(normalize(triangles[index].normal), normalize(d)) < 0) continue;
+    //   // float angle = acos(dot(normalize(triangles[i].normal),normalize(d)))/abs(dot(normalize(triangles[i].normal),normalize(d)));
+    //   // if (angle >=  1.5708) continue;
+    // }
     Triangle triangle = triangles[i];
     vec4 v0 = triangle.v0;
     vec4 v1 = triangle.v1;
@@ -306,18 +336,79 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Inte
         closestIntersection.distance = t;
         closestIntersection.position = r;
         closestIntersection.triangleIndex = i;
+        closestIntersection.isTriangle = true;
       }
     }
   }
 
+//   vec4 offset = vec4(0.001f, 0.001f, 0.001f, 1.f) * closestIntersection.circleNormal;
+//   vec4 start_position = closestIntersection.position - offset;
+
+//   if (!circleIntersection(s, d, circles, closestIntersection)) return false;
+  
+    circleIntersection(s, d, circles, closestIntersection, index);
+
   if (closestIntersection.distance == maxFloat) return false;
-
-
   return true;
 }
 
-vec4 diffuseDirection(Triangle& triangle){
-    vec3 hitNormal = toVec3(triangle.normal);
+bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersection& closestIntersection, int within_index, bool isInCircle) {
+
+  if (isInCircle) closestIntersection.distance = maxFloat;
+
+  float current = closestIntersection.distance;
+  for (uint i = 0; i < circles.size(); i++) {
+
+    if (isInCircle && (i != within_index)) continue;
+    // if (!isInCircle && within_index != -1 && (i == within_index)) continue;
+   
+    float t0 = maxFloat;
+    float t1 = maxFloat;
+
+    vec4 L4 = s - circles[i].center;
+
+    vec3 L = vec3(L4);
+    vec3 d3 = vec3(d);
+
+    float a = dot(d3, d3);
+    float b = 2 * dot(d3, L);
+    float c = dot(L, L) - pow(circles[i].radius, 2);
+
+    if ((pow(b,2) - 4 * a * c) < 0) continue;
+
+    if (within_index == 2 && (pow(b,2) - 4 * a * c) > 0) printf("I'm here");
+    
+    
+
+    t0 = (-b + sqrt(pow(b, 2) - 4 * a * c)) / (2 * a);
+    t1 = (-b - sqrt(pow(b, 2) - 4 * a * c)) / (2 * a);
+
+    if (t0 > t1) std::swap(t0, t1);
+
+    if (t0 < 0) {
+      t0 = t1;
+
+      if (isInCircle && t0 < 0) printf("Can't find t value\n");
+      if (t0 < 0) continue;
+    }
+
+    if (t0 < closestIntersection.distance) {
+      // printf("I'm here\n");
+      closestIntersection.distance = t0;
+      closestIntersection.position = s + t0 * d;
+      closestIntersection.isTriangle = false;
+      closestIntersection.circleIndex = i;
+      closestIntersection.circleNormal = normalize((s + t0 * d) - circles[i].center);
+    }
+  }
+
+  if (closestIntersection.distance == current) return false;
+  return true;
+}
+
+
+vec4 diffuseDirection(vec4& normal){
+    vec3 hitNormal = toVec3(normal);
     vec3 Nt, Nb;
     createCoordinateSystem(hitNormal, Nt, Nb);
     float r1 = distribution(generator);
@@ -329,8 +420,8 @@ vec4 diffuseDirection(Triangle& triangle){
       sampledVector.x * Nb.y + sampledVector.y * hitNormal.y + sampledVector.z * Nt.y,
       sampledVector.x * Nb.z + sampledVector.y * hitNormal.z + sampledVector.z * Nt.z);
     
-    sampleWorld = normalize(sampleWorld);
-    return toVec4(sampleWorld);
+    sampleWorld = (sampleWorld);
+    return normalize(toVec4(sampleWorld));
 
 }
 
@@ -359,8 +450,8 @@ vec3 sampleDirectionVector(const float &r1, const float &r2){
   return vec3(x, r1, z);
 }
 
-vec4 specularReflection(Triangle& triangle, vec4& incoming) {
-    vec4 n = triangle.normal;
+vec4 specularReflection(vec4& normal, vec4& incoming) {
+    vec4 n = normal;
     vec4 reflectedDirection = (incoming - 2.f * (glm::dot(incoming, n)) * n);
     return normalize(reflectedDirection);
 }
@@ -383,7 +474,7 @@ void Update()
   float dt = float(t2-t);
   t = t2;
   /*Good idea to remove this*/
-  std::cout << "Render time: " << dt << " ms." << std::endl;
+//   std::cout << "Render time: " << dt << " ms." << std::endl;
   /* Update variables*/
   SDL_Event e;
   mat4 translation(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
