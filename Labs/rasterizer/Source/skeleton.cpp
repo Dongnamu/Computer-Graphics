@@ -18,9 +18,9 @@ using glm::mat4;
 using glm::ivec2;
 
 
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 1080
-#define FULLSCREEN_MODE true
+#define SCREEN_WIDTH 500
+#define SCREEN_HEIGHT 500
+#define FULLSCREEN_MODE false
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -82,8 +82,8 @@ Current current = {
 };
 
 Camera camera = {
-  .position = vec4(0,0,0, 1.0),
-  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,1.8,1)),  // .center = vec3(0.003724, 0.929729, 0.07459)
+  .position = vec4(0,0,-2,1.0),
+  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),  // .center = vec3(0.003724, 0.929729, 0.07459)
   .center = vec3(0,0,0)
 };
 
@@ -137,7 +137,7 @@ bool isBoundary(vector<int> numSigns);
 bool isNegative(vector<int> numSigns);
 void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary, vector<vec4>& out);
 void updateClippers();
-
+mat4 getRotation();
 
 int main( int argc, char* argv[] )
 {
@@ -206,16 +206,16 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 void updateClippers() {
 
     // These are the directions towards the four corners of the img plane
-    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 leftUpCorner = normalize(getRotation() * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftUp = vec3(leftUpCorner[0],  leftUpCorner[1], leftUpCorner[2]);
    
-    vec4 leftBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 leftBotCorner = normalize(getRotation() * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftBot = vec3(leftBotCorner[0],  leftBotCorner[1], leftBotCorner[2]);
 
-    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 rightTopCorner = normalize(getRotation() * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightUp = vec3(rightTopCorner[0],  rightTopCorner[1], rightTopCorner[2]);
 
-    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 rightBotCorner = normalize(getRotation() * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightBot = vec3(rightBotCorner[0],  rightBotCorner[1], rightBotCorner[2]);
 
     // We use those directions to get the normal of the plane
@@ -257,6 +257,10 @@ void updateClippers() {
     clipper.botPoint = leftBottomPoint + depth * leftToRight;
     clipper.topPoint = leftTopPoint + depth * topTotop;
 
+}
+
+mat4 getRotation() {
+  return mat4(camera.basis[0], camera.basis[1], camera.basis[2], vec4(0,0,0,1));
 }
 
 
@@ -431,7 +435,7 @@ void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary,
 }
 
 void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
-  vertex.position = camera.basis * v;
+  vertex.position = getRotation() * (v - (camera.position + camera.basis[3]));
   p.zinv = 1/vertex.position[2];
   p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
   p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
@@ -673,25 +677,25 @@ void Update()
         break;
       case SDLK_UP:
         // Move camera forward
-        camera.basis[3][2] -= 0.1;
+        camera.basis[3][2] += 0.1;
         break;
       case SDLK_DOWN:
       // Move camera backward
-        camera.basis[3][2] += 0.1;
+        camera.basis[3][2] -= 0.1;
         break;
       case SDLK_LEFT:
       // Move camera to the left
-        camera.basis[3][0] += 0.1;
+        camera.basis[3][0] -= 0.1;
         break;
       case SDLK_RIGHT:
       // Move camera to the right
-        camera.basis[3][0] -= 0.1;
+        camera.basis[3][0] += 0.1;
         break;
       case SDLK_n:
-        camera.basis[3][1] += 0.1;
+        camera.basis[3][1] -= 0.1;
         break;
       case SDLK_m:
-        camera.basis[3][1] -= 0.1;
+        camera.basis[3][1] += 0.1;
         break;
       case SDLK_d:
         // Rotate camera right;
