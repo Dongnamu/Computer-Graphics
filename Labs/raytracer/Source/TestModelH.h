@@ -100,7 +100,7 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	// circles.push_back(Circle(A, 60, white, true, diffuse));
 	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
-	circles.push_back(Circle(C, 60, yellow, true, specular));
+	// circles.push_back(Circle(C, 60, yellow, true, specular));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
@@ -157,8 +157,8 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	triangles.push_back( Triangle( C, D, B, green ) );
 
 	// Left wall
-	triangles.push_back( Triangle( A, E, C, purple, true, specular ) );
-	triangles.push_back( Triangle( C, E, G, purple, true, specular ) );
+	triangles.push_back( Triangle( A, E, C, purple) );
+	triangles.push_back( Triangle( C, E, G, purple) );
 
 	// Right wall
 	triangles.push_back( Triangle( F, B, D, yellow));
@@ -169,8 +169,8 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	triangles.push_back( Triangle( F, H, G, cyan ) );
 
 	// Back wall
-	triangles.push_back( Triangle( G, D, C, white, true) );
-	triangles.push_back( Triangle( G, H, D, white, true) );
+	triangles.push_back( Triangle( G, D, C, white) );
+	triangles.push_back( Triangle( G, H, D, white) );
 
 	// ---------------------------------------------------------------------------
 	// Short block
