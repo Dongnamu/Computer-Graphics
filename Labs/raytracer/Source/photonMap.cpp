@@ -28,7 +28,7 @@ struct Photon {
     vec4 hitPos;
     vec3 color;
     char phi, theta; 
-    short flag;
+    int flag;
 };
 
 struct Light{
@@ -57,6 +57,10 @@ struct Node{
     struct Node *left, *right;
 };
 
+struct WhichPhoton {
+    unsigned long index;
+    float distance;
+};
 
 const int SPECULAR = 0;
 const int ABSORPTION = 1;
@@ -64,8 +68,8 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 1080
+#define SCREEN_WIDTH 500
+#define SCREEN_HEIGHT 500
 #define FULLSCREEN_MODE false
 
 
@@ -111,10 +115,23 @@ vec4 toVec4(const vec3 x);
 vec3 toVec3(const vec4 x);
 vec4 diffuseDirection(vec4& normal);
 vec4 specularReflection(vec4& normal, vec4& incoming);
+int getMaximumDimension( vector<Photon>& photons);
+void swap(Photon *a, Photon *b);
+int partition(vector <Photon> &photons, int dim, int low, int high);
+void quickSort(vector<Photon> &photons, int dim, int low, int high);
+void swapDistance(WhichPhoton& i, WhichPhoton &j);
+int partitionDistance(vector<WhichPhoton> &maxHeap, int low, int high);
+void quickSortDistance(vector<WhichPhoton>&maxHeap, int low, int high);
+int calculateMedian(vector<Photon> photons, int& dim);
 void Update();
 void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& photons, const vector<Circle>& circles);
 void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material);
 void createkdTree(vector<Photon>& kdTree, vector<Photon>& photons);
+void locate_photons(const unsigned long index, const vector<Photon> kdTree, vector<WhichPhoton>& maxHeap, const vec4 position, float& maxDistance, const int maxSize);
+void searchkdTree(vector<WhichPhoton>& maxHeap, const vector<Photon> kdTree, const vec4 position, const float distance, const int maxSize);
+void quickSortDistance(vector<WhichPhoton>& maxHeap, int low, int high);
+float findMinimum(vector<WhichPhoton>& maxHeap);
+float findMaximum(vector<WhichPhoton>& maxHeap);
 
 mat4 generateRotation(vec3 a);
 
@@ -128,6 +145,8 @@ int main(){
     LoadCircles(circles);
     startPhotons(photons, triangles, circles);
     vector<Photon> kdTree;
+    vector<WhichPhoton> maxHeap;
+    maxHeap.clear();
     printf("STORED PHOTONS: %d\n", photons.size());
     for (uint i = 0; i < photons.size(); i++){
         std::cout<<glm::to_string(photons[i].hitPos)<<std::endl;
@@ -139,6 +158,12 @@ int main(){
         std::cout<<glm::to_string(kdTree[i].hitPos)<<std::endl;
     }
 
+    searchkdTree(maxHeap, kdTree, vec4(0.203151, -0.800000, -0.479227, 1.000000), 0.5, 25);
+    printf("Maxheap: %d\n", maxHeap.size());
+
+    for (uint i = 0; i < maxHeap.size(); i++) {
+        printf("%f\n", maxHeap[i].distance);
+    }
 
     //   while( !escape )
     // {
@@ -190,9 +215,10 @@ void swap(Photon *a, Photon *b){
 
 int partition(vector <Photon> &photons, int dim, int low, int high){
     int pivot = photons[high].hitPos[dim];
+    // if (dim == -1) printf("Pivot: %d\n",pivot);
     int i = (low - 1);
 
-    for (int j = low; j <= high-1; j++)
+    for (int j = low; j <= high - 1; j++)
     {
         if (photons[j].hitPos[dim] <= pivot)
         {
@@ -203,6 +229,7 @@ int partition(vector <Photon> &photons, int dim, int low, int high){
     swap(&photons[i+1], &photons[high]);
     return (i + 1);
 }
+
 void quickSort(vector<Photon> &photons, int dim, int low, int high){
     if (low < high) 
     {
@@ -212,19 +239,56 @@ void quickSort(vector<Photon> &photons, int dim, int low, int high){
     }
 }
 
+void swapDistance(WhichPhoton& i, WhichPhoton& j) {
+    WhichPhoton temp = i;
+    i = j;
+    j = temp;
+}
+
+int partitionDistance(vector<WhichPhoton>& maxHeap, int low, int high) {
+    float pivot = maxHeap[high].distance;
+
+    int i = low - 1;
+
+    for (int j = low; j <= high - 1; j++) {
+        if  (maxHeap[j].distance <= pivot) {
+            i++;
+            swapDistance(maxHeap[i], maxHeap[j]);
+        }
+    }
+
+    swap(maxHeap[i + 1], maxHeap[high]);
+    return i + 1;
+}
+
+
+void quickSortDistance(vector<WhichPhoton>& maxHeap, int low, int high) {
+    if (low < high) {
+        int pi = partitionDistance(maxHeap, low, high);
+
+        quickSortDistance(maxHeap, low, pi - 1);
+        quickSortDistance(maxHeap, pi + 1, high);
+    }
+}
+
 int calculateMedian(vector<Photon> photons, int& dim){
     quickSort(photons, dim,  0, photons.size()-1);
-    return floor(photons.size()/2);
 
+    return floor(photons.size()/2);
 }
+
 void createkdTree(vector<Photon>& kdTree,  vector<Photon>& photons){
     if (photons.size() == 0) return;
-
+    if (photons.size() == 1) {
+        photons[0].flag = 0;
+        kdTree.push_back(photons[0]);
+        return;
+    }
     int dim = getMaximumDimension(photons);
-
 
     int median = calculateMedian(photons, dim);
 
+    photons[median].flag = dim;
     kdTree.push_back(photons[median]);
 
     vector <Photon> left;
@@ -243,8 +307,80 @@ void createkdTree(vector<Photon>& kdTree,  vector<Photon>& photons){
     createkdTree(kdTree, right);
 
     return;
-};
+}
 
+float findMaximum(vector<WhichPhoton>& maxHeap) {
+    if (maxHeap.size() == 0) return maxFloat;
+    return maxHeap[maxHeap.size() - 1].distance;
+}
+
+float findMinimum(vector<WhichPhoton>& maxHeap) {
+    if (maxHeap.size() == 0) return minFloat;
+    return maxHeap[0].distance;
+}
+
+
+void locate_photons(const unsigned long index, const vector<Photon> kdTree, vector<WhichPhoton>& maxHeap, const vec4 position, float& maxDistance, const int maxSize) {
+    unsigned long right = 2 * index + 1;
+    unsigned long left = 2 * index + 2;
+    unsigned long leftover = 0;
+
+    if (right < kdTree.size()) {
+
+        int dimension = kdTree[index].flag;
+
+        // printf("Dimension: %d\n", dimension);
+        
+        float distance = kdTree[index].hitPos[dimension] - position[dimension];
+
+        if (distance < 0) {
+            locate_photons(left, kdTree, maxHeap, position, maxDistance, maxSize);
+            leftover = right;
+
+        } else {
+            locate_photons(right, kdTree, maxHeap, position, maxDistance, maxSize);
+            leftover = left;
+        }
+
+        if (pow(distance, 2) < maxDistance) {
+            locate_photons(leftover, kdTree, maxHeap, position, maxDistance, maxSize);
+        }
+    }
+
+    float distance = pow(glm::distance(position, kdTree[index].hitPos), 2); 
+
+    if (distance < maxDistance) {
+        
+        float maximum = findMaximum(maxHeap);
+
+        printf("Maximum is %f\n", maximum);
+        if (distance < maximum) {
+
+            if (maxHeap.size() == maxSize) {
+                printf("I'm here 2\n");
+                maxHeap.erase(maxHeap.begin() + maxSize - 1);
+            }
+
+            WhichPhoton newItem = {
+                .index = index,
+                .distance = distance
+            };
+            maxHeap.push_back(newItem);
+            quickSortDistance(maxHeap, 0, maxHeap.size() - 1);
+
+        }
+
+        maxDistance = findMaximum(maxHeap);
+    }
+}
+
+void searchkdTree(vector<WhichPhoton>& maxHeap, const vector<Photon> kdTree, const vec4 position, const float distance, const int maxSize) {
+
+    float maxDistance = pow(distance, 2);
+
+    locate_photons(0, kdTree, maxHeap, position, maxDistance, maxSize);
+
+}
 
 
 
@@ -262,7 +398,7 @@ vec4 calculateLightDirection(){
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles) {
-    int numberOfPhotons = 5;
+    int numberOfPhotons = 100000;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;
@@ -475,7 +611,7 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
     vec3 L = vec3(L4);
     vec3 d3 = vec3(d);
 
-    float a = dot(d3, d3);
+    float a = 1;
     float b = 2 * dot(d3, L);
     float c = dot(L, L) - pow(circles[i].radius, 2);
 

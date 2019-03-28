@@ -7,6 +7,30 @@
 #include <vector>
 
 // Used to describe a triangular surface:
+class Material
+{
+public:
+	float specular;
+	float refraction;
+	float absorption;
+	float diffuse;
+};
+
+Material diffuse = {
+	.specular = 0.0,
+	.refraction = 0.0,
+	.absorption = 0.1,
+	.diffuse = 0.9
+};
+
+Material specular = {
+	.specular = 0.8,
+	.refraction = 0.0,
+	.absorption = 0.2,
+	.diffuse = 0.0
+};
+
+
 class Triangle
 {
 public:
@@ -15,11 +39,15 @@ public:
 	glm::vec4 v2;
 	glm::vec4 normal;
 	glm::vec3 color;
+	bool isMirror;
+	Material material;
 
-	Triangle( glm::vec4 v0, glm::vec4 v1, glm::vec4 v2, glm::vec3 color )
+	Triangle( glm::vec4 v0, glm::vec4 v1, glm::vec4 v2, glm::vec3 color, bool isM = false, Material m = diffuse)
 		: v0(v0), v1(v1), v2(v2), color(color)
 	{
 		ComputeNormal();
+		isMirror = isM;
+		material = m;
 	}
 
 	void ComputeNormal()
@@ -34,21 +62,21 @@ public:
 	}
 };
 
+
 class Circle {
 	public:
 		glm::vec4 center;
 		float radius;
 		glm::vec3 color;
 		bool isGlass;
+		Material material;
 		
-		Circle( glm::vec4 center, float radius, glm::vec3 color, bool isGlass)
-			: center(center), radius(radius), color(color), isGlass(isGlass) {}
+		Circle( glm::vec4 center, float radius, glm::vec3 color, bool isGlass, Material m = diffuse)
+			: center(center), radius(radius), color(color), isGlass(isGlass) {
+				material = m;
+			}
 };
 
-// Loads the Cornell Box. It is scaled to fill the volume:
-// -1 <= x <= +1
-// -1 <= y <= +1
-// -1 <= z <= +1
 
 void LoadCircles( std::vector<Circle>& circles ) {
 	using glm::vec3;
@@ -68,11 +96,11 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	vec4 A(433,330,247,1);
 	vec4 B(323,330,147,1);
-	vec4 C(233,330,147,1);
+	vec4 C(465,330,467,1);
 
-	circles.push_back(Circle(A, 60, white, true));
-	circles.push_back(Circle(B, 20, cyan, true));
-	circles.push_back(Circle(C, 60, yellow, true));
+	// circles.push_back(Circle(A, 60, white, true, diffuse));
+	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
+	circles.push_back(Circle(C, 60, yellow, true, specular));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
@@ -88,6 +116,11 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 }
 
+
+// Loads the Cornell Box. It is scaled to fill the volume:
+// -1 <= x <= +1
+// -1 <= y <= +1
+// -1 <= z <= +1
 void LoadTestModel( std::vector<Triangle>& triangles )
 {
 	using glm::vec3;
@@ -101,7 +134,6 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	vec3 blue(   0.15f, 0.15f, 0.75f );
 	vec3 purple( 0.75f, 0.15f, 0.75f );
 	vec3 white(  0.75f, 0.75f, 0.75f );
-
 	triangles.clear();
 	triangles.reserve( 5*2*3 );
 
@@ -125,20 +157,20 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	triangles.push_back( Triangle( C, D, B, green ) );
 
 	// Left wall
-	triangles.push_back( Triangle( A, E, C, purple ) );
-	triangles.push_back( Triangle( C, E, G, purple ) );
+	triangles.push_back( Triangle( A, E, C, purple, true, specular ) );
+	triangles.push_back( Triangle( C, E, G, purple, true, specular ) );
 
 	// Right wall
-	triangles.push_back( Triangle( F, B, D, yellow ) );
-	triangles.push_back( Triangle( H, F, D, yellow ) );
+	triangles.push_back( Triangle( F, B, D, yellow));
+	triangles.push_back( Triangle( H, F, D, yellow) );
 
 	// Ceiling
 	triangles.push_back( Triangle( E, F, G, cyan ) );
 	triangles.push_back( Triangle( F, H, G, cyan ) );
 
 	// Back wall
-	triangles.push_back( Triangle( G, D, C, white ) );
-	triangles.push_back( Triangle( G, H, D, white ) );
+	triangles.push_back( Triangle( G, D, C, white, true) );
+	triangles.push_back( Triangle( G, H, D, white, true) );
 
 	// ---------------------------------------------------------------------------
 	// Short block
@@ -186,35 +218,29 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	G = vec4(472,330,406,1);
 	H = vec4(314,330,456,1);
 
-	// Front
-	triangles.push_back( Triangle(E,B,A,blue) );
-	triangles.push_back( Triangle(E,F,B,blue) );
+	// // Front
+	// triangles.push_back( Triangle(E,B,A,blue) );
+	// triangles.push_back( Triangle(E,F,B,blue) );
 
-	// Front
-	triangles.push_back( Triangle(F,D,B,blue) );
-	triangles.push_back( Triangle(F,H,D,blue) );
+	// // Front
+	// triangles.push_back( Triangle(F,D,B,blue) );
+	// triangles.push_back( Triangle(F,H,D,blue) );
 
-	// BACK
-	triangles.push_back( Triangle(H,C,D,blue) );
-	triangles.push_back( Triangle(H,G,C,blue) );
+	// // BACK
+	// triangles.push_back( Triangle(H,C,D,blue) );
+	// triangles.push_back( Triangle(H,G,C,blue) );
 
-	// LEFT
-	triangles.push_back( Triangle(G,E,C,blue) );
-	triangles.push_back( Triangle(E,A,C,blue) );
+	// // LEFT
+	// triangles.push_back( Triangle(G,E,C,blue) );
+	// triangles.push_back( Triangle(E,A,C,blue) );
 
-	// TOP
-	triangles.push_back( Triangle(G,F,E,blue) );
-	triangles.push_back( Triangle(G,H,F,blue) );
+	// // TOP
+	// triangles.push_back( Triangle(G,F,E,blue) );
+	// triangles.push_back( Triangle(G,H,F,blue) );
 
 
 	// ----------------------------------------------
 	// Scale to the volume [-1,1]^3
-
-
-	// -------------------------------------------------------
-	// Test block
-
-	//-------------------------------------------------
 
 	for( size_t i=0; i<triangles.size(); ++i )
 	{
