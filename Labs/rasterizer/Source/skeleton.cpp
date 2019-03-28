@@ -18,9 +18,9 @@ using glm::mat4;
 using glm::ivec2;
 
 
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 1080
-#define FULLSCREEN_MODE true
+#define SCREEN_WIDTH 500
+#define SCREEN_HEIGHT 500
+#define FULLSCREEN_MODE false
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -160,11 +160,11 @@ int main( int argc, char* argv[] )
       vector<Triangle> bottomTriangles;
       Update();
       updateClippers();
-      ClipTriangles(triangles, nearTriangles, clipper.nearNormal, clipper.nearPoint);
-      ClipTriangles(nearTriangles, leftTriangles, clipper.leftNormal, clipper.leftPoint);
-      ClipTriangles(leftTriangles, rightTriangles, clipper.rightNormal, clipper.rightPoint);
-      ClipTriangles(rightTriangles, topTriangles, clipper.topNormal, clipper.topPoint);
-      ClipTriangles(topTriangles, bottomTriangles, clipper.botNormal, clipper.botPoint);
+      // ClipTriangles(triangles, nearTriangles, clipper.nearNormal, clipper.nearPoint);
+      // ClipTriangles(triangles, leftTriangles, clipper.leftNormal, clipper.leftPoint);
+      // ClipTriangles(triangles, rightTriangles, clipper.rightNormal, clipper.rightPoint);
+      // ClipTriangles(triangles, topTriangles, clipper.topNormal, clipper.topPoint);
+      ClipTriangles(triangles, bottomTriangles, clipper.botNormal, clipper.botPoint);
       Draw(screen, bottomTriangles);
       SDL_Renderframe(screen);
     }
@@ -207,20 +207,20 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 void updateClippers() {
 
     // These are the directions towards the four corners of the img plane
-    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 leftUpCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftUp = vec3(leftUpCorner[0],  leftUpCorner[1], leftUpCorner[2]);
    
-    vec4 leftBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 leftBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftBot = vec3(leftBotCorner[0],  leftBotCorner[1], leftBotCorner[2]);
 
-    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 rightTopCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightUp = vec3(rightTopCorner[0],  rightTopCorner[1], rightTopCorner[2]);
 
-    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 rightBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightBot = vec3(rightBotCorner[0],  rightBotCorner[1], rightBotCorner[2]);
 
     // We use those directions to get the normal of the plane
-    vec3 leftNormal = (glm::cross(-leftUp, leftBot));
+    vec3 leftNormal = (glm::cross(leftUp, leftBot));
     vec3 rightNormal =(glm::cross(rightUp, rightBot));
     vec3 topNormal = (glm::cross(leftUp, rightUp));
     vec3 botNormal = (glm::cross(leftBot, rightBot));
@@ -229,8 +229,8 @@ void updateClippers() {
     
     vec4 leftN = vec4(leftNormal.x, leftNormal.y, leftNormal.z, 1);
     vec4 rightN = vec4(rightNormal.x, rightNormal.y, rightNormal.z, 1);
-    vec4 topN = vec4(topNormal.x, -topNormal.y, topNormal.z, 1);
-    vec4 botN = vec4(botNormal.x, botNormal.y, -botNormal.z, 1);
+    vec4 topN = vec4(topNormal.x, topNormal.y, topNormal.z, 1);
+    vec4 botN = vec4(botNormal.x, botNormal.y, botNormal.z, 1);
 
     // We use the directions from the top to find points in the near plane and then find the normal of this plane
     vec4 leftTopPoint = camera.position + (leftUpCorner * depth);
@@ -244,7 +244,7 @@ void updateClippers() {
     vec3 leftToRight3 = vec3(leftToRight.x, leftToRight.y, leftToRight.z);
     vec3 leftToTop3 = vec3(leftToTop.x, leftToTop.y, leftToTop.z);
 
-    vec3 nearNormal = (glm::cross(-leftToRight3, leftToTop3));
+    vec3 nearNormal = (glm::cross(leftToRight3, leftToTop3));
     vec4 nearN = normalize(vec4(nearNormal.x, nearNormal.y, nearNormal.z, 1));
 
     clipper.nearNormal = nearN;
