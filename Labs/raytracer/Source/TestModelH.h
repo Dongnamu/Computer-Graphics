@@ -34,10 +34,63 @@ public:
 	}
 };
 
+class Circle {
+	public:
+		glm::vec4 center;
+		int radius;
+		glm::vec3 color;
+
+		Circle( glm::vec4 center, int radius, glm::vec3 color)
+			: center(center), radius(radius), color(color) {}
+};
+
 // Loads the Cornell Box. It is scaled to fill the volume:
 // -1 <= x <= +1
 // -1 <= y <= +1
 // -1 <= z <= +1
+
+void LoadCircles( std::vector<Circle>& circles ) {
+	using glm::vec3;
+	using glm::vec4;
+
+	vec3 red(    0.75f, 0.15f, 0.15f );
+	vec3 yellow( 0.75f, 0.75f, 0.15f );
+	vec3 green(  0.15f, 0.75f, 0.15f );
+	vec3 cyan(   0.15f, 0.75f, 0.75f );
+	vec3 blue(   0.15f, 0.15f, 0.75f );
+	vec3 purple( 0.75f, 0.15f, 0.75f );
+	vec3 white(  0.75f, 0.75f, 0.75f );
+
+	circles.clear();
+
+	circles.reserve(3);
+
+	float L = 555;
+
+	vec4 A(200, 200, 200, 1);
+	vec4 B(200, 100, 200, 1);
+	vec4 C(200, 300, 200, 1);
+
+	// triangles.push_back( Triangle( A, E, C, purple ) );
+	// triangles.push_back( Triangle( C, E, G, purple ) );
+
+	circles.push_back(Circle(A, 20, white));
+	circles.push_back(Circle(A, 40, cyan));
+	circles.push_back(Circle(A, 60, yellow));
+
+	for( size_t i=0; i<circles.size(); ++i )
+	{
+		circles[i].center *= 2/L;
+		circles[i].radius *= 2/L;
+		circles[i].center -= vec4(1,1,1,1);
+		circles[i].center.x *= -1;
+		circles[i].center.y *= -1;
+		circles[i].center.w = 1.0;
+
+	}
+
+}
+
 void LoadTestModel( std::vector<Triangle>& triangles )
 {
 	using glm::vec3;
