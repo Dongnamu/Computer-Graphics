@@ -16,8 +16,8 @@ using glm::mat4;
 
 #define N_DIMENSION 4
 #define MASTER 0
-#define SCREEN_WIDTH 300
-#define SCREEN_HEIGHT 300
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 1080
 #define FULLSCREEN_MODE true
 #define PI 3.14159265359
 
@@ -62,14 +62,14 @@ mat4 R;
 
 void Update(Camera &camera, Light &light, bool &escape, bool &is_lookAt, float &focalDistance, float &aperature);
 void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int local_nrows, const vec3 *pixel_color_value, int local_cols, int local_rows, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
-bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, Intersection& closestIntersection, int index = -1);
+bool ClosestIntersection(vec4 start, vec4 dir, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index = -1);
 float calA(float radius);
 vec3 calB(vec3 power, float radius);
 vec3 calD(vec3 r, vec3 n, vec3 power, float radius);
-vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles);
-void processPart(Camera &camera, Light &light, Options &options, float &focalDistance, float &aperature, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
-vec3 fadedShadows(Light &light, const Intersection& i, const vector<Triangle>& triangles);
-vec3 focusGaussian(Camera &camera, Light &light, float &focalDistance, float &aperature, const vector<Triangle>& triangles, int row, int col, vec4 principalDirection);
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
+void processPart(Camera &camera, Light &light, Options &options, float &focalDistance, float &aperature, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle>& triangles, const vector<Circle>& circles, const int& row_start, const int& row_end, const int& col_start, const int& col_end);
+vec3 fadedShadows(Light &light, const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
+vec3 focusGaussian(Camera &camera, Light &light, float &focalDistance, float &aperature, const vector<Triangle>& triangles, const vector<Circle>& circles, int row, int col, vec4 principalDirection);
 
 
 
@@ -115,7 +115,10 @@ int main( int argc, char* argv[] )
   float aperature = 0.0003f;
 
   vector<Triangle> triangles;
+  vector<Circle> circles;
+  
   LoadTestModel(triangles);
+  LoadCircles(circles);
 
   MPI_Init(&argc, &argv);
 
@@ -228,7 +231,7 @@ int main( int argc, char* argv[] )
         MPI_Send(sendbuf, 26, MPI_FLOAT, k, tag, MPI_COMM_WORLD);
       }
 
-      processPart(camera, light, options, focalDistance, aperature, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      processPart(camera, light, options, focalDistance, aperature, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, circles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       Draw(screen, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
@@ -291,7 +294,7 @@ int main( int argc, char* argv[] )
       focalDistance = recvbuf[24];
       aperature = recvbuf[25];
 
-      processPart(camera, light, options, focalDistance, aperature, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
+      processPart(camera, light, options, focalDistance, aperature, &pixel_light_value[0][0], local_ncols, local_nrows, &pixel_color_value[0][0], local_ncols, local_nrows, triangles, circles, loop_row_start_point, loop_row_end_point, loop_col_start_point, loop_col_end_point);
 
       sendbuf[0] = loop_row_start_point;
       sendbuf[1] = loop_row_end_point;
@@ -356,7 +359,7 @@ void Draw(screen* screen, const vec3 *pixel_light_value, int local_ncols, int lo
   }
 }
 
-void processPart(Camera &camera, Light &light, Options &options, float &focalDistance, float &aperature, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle> & triangles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
+void processPart(Camera &camera, Light &light, Options &options, float &focalDistance, float &aperature, vec3 *pixel_light_value, int local_ncols, int local_nrows, vec3 *pixel_color_value, int local_cols, int local_rows, const vector<Triangle>& triangles, const vector<Circle>& circles, const int& row_start, const int& row_end, const int& col_start, const int& col_end) {
   for (int row = row_start; row < row_end; row++) {
     for (int col = col_start; col < col_end; col++) {
       Intersection intersect;
@@ -366,7 +369,7 @@ void processPart(Camera &camera, Light &light, Options &options, float &focalDis
       vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
 
         // total_light_power += DirectLight(light, intersect, triangles);
-      vec3 blurrColor = focusGaussian(camera, light, focalDistance, aperature, triangles, row, col, normalize(d));
+      vec3 blurrColor = focusGaussian(camera, light, focalDistance, aperature, triangles, circles, row, col, normalize(d));
 
       total_color = blurrColor;
 
@@ -402,7 +405,7 @@ mat4 lookAt(vec3 from, vec3 to) {
   return camToWorld;
 }
 
-bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, Intersection& closestIntersection, int index){
+bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index){
   closestIntersection.distance = maxFloat;
 
   for(uint i = 0; i < triangles.size(); i++){
@@ -466,7 +469,7 @@ mat4 generateRotation(vec3 a){
   return (mat4(uno, dos, tres, cuatro));
 }
 
-vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles){
+vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles){
   float r = glm::distance(light.position, i.position);
   float area = 4 * PI * pow(r, 2);
 
@@ -482,14 +485,14 @@ vec3 DirectLight(Light &light, const Intersection& i, const vector<Triangle>& tr
   vec3 d = (light.color * max((r_n), 0.f))/area;
   Intersection intersect;
 
-  if (ClosestIntersection(i.position, direction, triangles, intersect, i.triangleIndex)) {
+  if (ClosestIntersection(i.position, direction, triangles, circles, intersect, i.triangleIndex)) {
     if (glm::distance(i.position, intersect.position) < r && glm::distance(i.position, intersect.position) >= 1e-10) return vec3(0,0,0);
   }
 
   return d;
 }
 
-vec3 fadedShadows(Light& light, const Intersection& i, const vector<Triangle>& triangles){
+vec3 fadedShadows(Light& light, const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles){
   Intersection neg = i;
   neg.position = neg.position + 0.01f*normalize(triangles[i.triangleIndex].normal);
   Intersection pos = i;
@@ -498,16 +501,16 @@ vec3 fadedShadows(Light& light, const Intersection& i, const vector<Triangle>& t
   neg1.position = neg1.position + 0.03f*normalize(triangles[i.triangleIndex].normal);
   Intersection pos1 = i;
   pos1.position = pos1.position + 0.04f*normalize(triangles[i.triangleIndex].normal);
-  vec3 light_power = DirectLight(light, i, triangles);
-  vec3 neg_light = DirectLight(light, neg, triangles);
-  vec3 pos_light = DirectLight(light, pos, triangles);
-  vec3 neg_light1 = DirectLight(light, neg1, triangles);
-  vec3 pos_light1 = DirectLight(light, pos1, triangles);
+  vec3 light_power = DirectLight(light, i, triangles, circles);
+  vec3 neg_light = DirectLight(light, neg, triangles, circles);
+  vec3 pos_light = DirectLight(light, pos, triangles, circles);
+  vec3 neg_light1 = DirectLight(light, neg1, triangles, circles);
+  vec3 pos_light1 = DirectLight(light, pos1, triangles, circles);
 
   return (light_power+neg_light+pos_light+neg_light1+pos_light1)/5.f;
 }
 
-vec3 focusGaussian(Camera &camera, Light &light, float &focalDistance, float &aperature, const vector<Triangle>& triangles, int row, int col, vec4 principalDirection) {
+vec3 focusGaussian(Camera &camera, Light &light, float &focalDistance, float &aperature, const vector<Triangle>& triangles, const vector<Circle>& circles, int row, int col, vec4 principalDirection) {
   vec3 color(0.f,0.f,0.f);
   float hitNumber = 0.f;
   vec3 shadow(0.f, 0.f, 0.f);
@@ -518,10 +521,10 @@ vec3 focusGaussian(Camera &camera, Light &light, float &focalDistance, float &ap
       vec4 randomPoint = vec4(camera.position[0] + x, camera.position[1] + y, camera.position[2], camera.position[3]);
       vec4 direction = target - randomPoint;
       Intersection inter;
-      if (ClosestIntersection(randomPoint, direction, triangles, inter)){
+      if (ClosestIntersection(randomPoint, direction, triangles, circles, inter)){
         hitNumber += 1.0f;
         color += triangles[inter.triangleIndex].color;
-        shadow+= fadedShadows(light, inter, triangles);
+        shadow+= fadedShadows(light, inter, triangles, circles);
       }
     }
   }
