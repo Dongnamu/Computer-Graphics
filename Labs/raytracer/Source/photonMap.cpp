@@ -70,9 +70,9 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 528
-#define SCREEN_HEIGHT 528
-#define FULLSCREEN_MODE true
+#define SCREEN_WIDTH 10
+#define SCREEN_HEIGHT 10
+#define FULLSCREEN_MODE false
 
 
 mat4 R;
@@ -83,8 +83,8 @@ float focal_length = SCREEN_HEIGHT / 2;
 
 
 Light light = {
-  .position = vec4(0, -0.7, -0.7, 1.0),
-  .color =   14.f * vec3(1,1,1),
+  .position = vec4(0, -0.7, -0.4, 1.0),
+  .color =   10.f * vec3(1,1,1),
 };
 
 Camera camera = {
@@ -97,10 +97,11 @@ Camera camera = {
 float yaw = 2 * PI / 180;
 
 // DEFINE DISTRIBUTIONS
+float md = 0.5;
 std::default_random_engine generator;
-std::uniform_real_distribution<float> distributionx(light.position[0]-1, light.position[0]+1);
-std::uniform_real_distribution<float> distributiony(light.position[1]-1, light.position[1]+1);
-std::uniform_real_distribution<float> distributionz(light.position[2]-1, light.position[2]+1);
+std::uniform_real_distribution<float> distributionx(light.position[0]-md, light.position[0]+md);
+std::uniform_real_distribution<float> distributiony(light.position[1], light.position[1]);
+std::uniform_real_distribution<float> distributionz(light.position[2]-md, light.position[2]+md);
 std::uniform_real_distribution<float> distribution(0 , 1);
 
 
@@ -115,26 +116,28 @@ vec3 sampleDirectionVector(const float &r1, const float &r2);
 void createCoordinateSystem(const vec3 &N, vec3 &Nt, vec3 &Nb);
 vec4 toVec4(const vec3 x);
 vec3 toVec3(const vec4 x);
-vec4 diffuseDirection(vec4& normal);
+vec4 diffuseDirection(vec4& normal, float &random);
 vec4 specularReflection(vec4& normal, vec4& incoming);
 
 
 
-void swap(int* a, int* b);
-int partition(const vector <Photon> &photons, int low, int high, const vec4 pos, int indices []);
-void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int indices []);
+// void swap(int* a, int* b);
+int partition(const vector <Photon> &photons, int low, int high, const vec4 pos, int * indices );
+void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int * indices );
 
 void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int indices []);
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int * indices );
 void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material);
 
 
-vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int indices []);
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces,  const vector<Photon> kdTree, int indices []);
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int * indices );
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces,  const vector<Photon> kdTree, int * indices);
 vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
 
 
 mat4 generateRotation(vec3 a);
+
+
 
 
 int main(){
@@ -152,55 +155,31 @@ int main(){
     int indices[photons.size()];
 
     for (int i = 0; i < photons.size(); i++){
-        // float distance = glm::distance(photons[i].hitPos, vec4(0,0,0,1));
-        // printf("DISTANCE TO ORIGIN: %f\n", distance);
         indices[i] = i;
     }
-    // printf("SORTING\n");
-    // int n = sizeof(indices)/ sizeof(indices[0]);
-    // quickSort(photons, 0, n-1, vec4(0,0,0,1), indices);
-
-    // for (int i = 0; i < photons.size(); i++){
-    //     float distance = glm::distance(photons[indices[i]].hitPos, vec4(0,0,0,1));
-    //     printf("DISTANCE TO ORIGIN: %f\n", distance);
-    //     // std::cout<<glm::to_string(photons[indices[i]].hitPos)<<std::endl;
-    // }
 
 
-
-    
-    // for (uint i = 0; i < kdTree.size(); i++) {
-    //     printf("=========================================\n");
-    //     printf("DIMENSION: %d\n", kdTree[i].flag);
-    //     printf("PARENT: ");
-    //     std::cout<<glm::to_string(kdTree[i].hitPos)<<std::endl;
-    //     printf("LEFT CHILD: ");
-    //     std::cout<<glm::to_string(kdTree[2*i].hitPos)<<std::endl;
-    //     printf("RIGHT CHILD: ");
-    //     std::cout<<glm::to_string(kdTree[2*i + 1].hitPos)<<std::endl;
-
-
-    // }
 
       while( !escape )
     {
       Update();
       Draw(screen, triangles, photons, circles, indices);
       SDL_Renderframe(screen);
+      Update();
+
     }
 }
 
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int indices [])
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int * indices)
 {
   /* Clear buffer */
-        // startPhotons(photons, triangles, circles);
         // memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-        // for (uint photon = 0; photon < photons.size(); photon++){
-        //     vec4 photonPos = camera.basis * photons[photon].hitPos; 
+        // for (uint photon = 0; photon < kdTree.size(); photon++){
+        //     vec4 photonPos = camera.basis * kdTree[photon].hitPos; 
         //     float u = focal_length * photonPos.x/photonPos.z + SCREEN_HEIGHT/2;
         //     float v = focal_length * photonPos.y/photonPos.z + SCREEN_HEIGHT/2;
-        //     PutPixelSDL(screen, u, v, photons[photon].color);
-        //  }
+        //     PutPixelSDL(screen, u, v, kdTree[photon].color);
+    //     //  }
 
 
     memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
@@ -219,7 +198,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon
 
 }
 
-vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int indices []){
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int * indices){
     Intersection intersect;
     vec3 color(0.f, 0.f, 0.f);
     vec3 shadow(0.f, 0.f, 0.f);
@@ -233,7 +212,7 @@ vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const v
 
 
 
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> kdTree, int indices []){
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> kdTree, int * indices ){
     if (bounces > 2) return vec3(0,0,0);
     Intersection i;
     vec3 hitColor(0,0,0);
@@ -261,12 +240,12 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
             vec3 directLight = DirectLight(i, triangles, circles);
             vec3 acc (0,0,0);
             int neighbours = 500;
-            int n = sizeof(indices)/ sizeof(indices[0]);
+            int n = kdTree.size()/ sizeof(indices[0]);
 
             quickSort(kdTree, 0, n-1, i.position, indices);
 
 
-            for (int j = 0; j < neighbours; j++) {
+            for (int j = 0; j < neighbours; j++) {                
                 float weight = (max(glm::dot((kdTree[indices[j]].incomingDirection), normal), 0.f));
                 acc += kdTree[j].color * weight;
             }
@@ -279,7 +258,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
             
             
-            hitColor = (directLight + acc)  * objectColor;
+            hitColor = acc;
         }
     } else {
         return vec3(0,0,0);
@@ -343,9 +322,12 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
 
                     
                 Photon newPhoton;
+                float random;
+                float pdf = 1 / (2 * PI); 
+
                 scalePower(DIFFUSE, photon, newPhoton, objectMaterial);
-                newPhoton.color *= objectColor;
-                vec4 outDir = diffuseDirection(objectNormal);
+                vec4 outDir = diffuseDirection(objectNormal, random);
+                newPhoton.color *= objectColor ;
                 firePhoton(i.position + toVec4(outDir) * 0.001f, outDir, photons, newPhoton, triangles, circles, n_fire + 1);
 
                 /* code */
@@ -403,32 +385,42 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const
     
 }
 
-void swap(int* a, int* b){
-    int t = *a; 
-    *a = *b; 
-    *b = t;
+void swap(const int a, const int b, int * indices){
+
+    int * addressA = &indices[a];
+    int temp_a = *addressA;
+    int * addressB = &indices[b];
+
+    *addressA = *addressB;
+    *addressB = temp_a;
+
+    // indices[b] = t;
+    // printf("HERE: %d\n", indices[b]);
 }
 
-int partition(const vector<Photon> &photons, int low, int high, const vec4 pos, int indices[]){
+int partition(const vector<Photon> &photons, int low, int high, const vec4 pos, int * indices){
     int pivot = indices[high];
     int i = (low - 1);
 
+
+
     for (int j = low; j <= high - 1; j++)
-    {
+    {     
         if ((glm::distance(photons[indices[j]].hitPos, pos)) <= glm::distance(photons[pivot].hitPos, pos))
         {
             i++;
-            swap(&indices[i], &indices[j]);
+            swap(i, j, indices);
         }
     }
 
-    swap(&indices[i+1], &indices[high]);
+    swap(i+1, high, indices);
 
     return (i + 1);
 }
 
-void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int indices[]){
-    // printf("LOW: %d\n", low);
+void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int * indices){
+
+
     if (low < high) 
     {
         int pi = partition(photons, low, high, pos, indices);
@@ -621,7 +613,7 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
 }
 
 
-vec4 diffuseDirection(vec4& normal){
+vec4 diffuseDirection(vec4& normal, float &random){
     vec3 hitNormal = toVec3(normal);
     vec3 Nt, Nb;
     createCoordinateSystem(hitNormal, Nt, Nb);
@@ -633,7 +625,7 @@ vec4 diffuseDirection(vec4& normal){
       sampledVector.x * Nb.x + sampledVector.y * hitNormal.x + sampledVector.z * Nt.x,
       sampledVector.x * Nb.y + sampledVector.y * hitNormal.y + sampledVector.z * Nt.y,
       sampledVector.x * Nb.z + sampledVector.y * hitNormal.z + sampledVector.z * Nt.z);
-    
+    random = r1;
     sampleWorld = (sampleWorld);
     return normalize(toVec4(sampleWorld));
 
