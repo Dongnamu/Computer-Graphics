@@ -137,6 +137,7 @@ bool isBoundary(vector<int> numSigns);
 bool isNegative(vector<int> numSigns);
 void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary, vector<vec4>& out);
 void updateClippers();
+mat4 getRotation();
 
 
 int main( int argc, char* argv[] )
@@ -203,19 +204,23 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
   }
 }
 
+mat4 getRotation() {
+  return mat4(camera.basis[0], camera.basis[1], camera.basis[2], vec4(0,0,0,1));
+}
+
 void updateClippers() {
 
     // These are the directions towards the four corners of the img plane
-    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 leftUpCorner = normalize(getRotation() * -camera.basis[3] * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
     vec3 leftUp = vec3(leftUpCorner);
    
-    vec4 leftBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 leftBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length, 1));
     vec3 leftBot = vec3(leftBotCorner);
 
-    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 rightTopCorner = normalize(getRotation() * -camera.basis[3] * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
     vec3 rightUp = vec3(rightTopCorner);
 
-    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
+    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length, 1));
     vec3 rightBot = vec3(rightBotCorner);
 
     // We use those directions to get the normal of the plane
