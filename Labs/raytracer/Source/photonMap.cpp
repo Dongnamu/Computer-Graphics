@@ -70,8 +70,8 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 528
-#define SCREEN_HEIGHT 528
+#define SCREEN_WIDTH 500
+#define SCREEN_HEIGHT 500
 #define FULLSCREEN_MODE false
 
 
@@ -121,16 +121,16 @@ vec4 specularReflection(vec4& normal, vec4& incoming);
 
 
 void swap(int* a, int* b);
-int partition(const vector <Photon> &photons, int low, int high, const vec4 pos, int indices []);
-void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int indices []);
+int partition(const vector <Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice);
+void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice);
 
 void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int indices []);
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int *indices, int sizeOfindice);
 void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material);
 
 
-vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int indices []);
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces,  const vector<Photon> kdTree, int indices []);
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int *indices, int sizeOfindice);
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces,  const vector<Photon> kdTree, int *indices, int sizeOfindice);
 vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
 
 
@@ -185,12 +185,12 @@ int main(){
       while( !escape )
     {
       Update();
-      Draw(screen, triangles, photons, circles, indices);
+      Draw(screen, triangles, photons, circles, indices, photons.size());
       SDL_Renderframe(screen);
     }
 }
 
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int indices [])
+void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int *indices, int sizeOfindice)
 {
   /* Clear buffer */
         // startPhotons(photons, triangles, circles);
@@ -207,7 +207,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon
     for (int row=0; row < SCREEN_HEIGHT; row++){
         for (int col = 0; col < SCREEN_WIDTH; col++){
             
-            vec3 c = processingPart(row, col, triangles, circles, kdTree, indices);
+            vec3 c = processingPart(row, col, triangles, circles, kdTree, indices, sizeOfindice);
             // printf("Aperture: %f\n, Focal Distance %f\n", aperture, focalDistance);
             PutPixelSDL(screen, row, col, c);
             // SDL_Renderframe(screen);
@@ -219,21 +219,21 @@ void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon
 
 }
 
-vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int indices []){
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int *indices, int sizeOfindice){
     Intersection intersect;
     vec3 color(0.f, 0.f, 0.f);
     vec3 shadow(0.f, 0.f, 0.f);
     vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
     Intersection inter;
 
-    vec3 mainColor = castRay(camera.basis[3], d, triangles, circles, 0, kdTree, indices);
+    vec3 mainColor = castRay(camera.basis[3], d, triangles, circles, 0, kdTree, indices, sizeOfindice);
 
     return mainColor;
 }
 
 
 
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> kdTree, int indices []){
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> kdTree, int *indices, int sizeOfindice){
     if (bounces > 2) return vec3(0,0,0);
     Intersection i;
     vec3 hitColor(0,0,0);
@@ -254,7 +254,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
         if (isMirror){
             vec4 reflectedDirection = specularReflection(normal, d);
-            hitColor += 0.8f * castRay(i.position, reflectedDirection, triangles, circles, bounces+1, kdTree, indices);
+            hitColor += 0.8f * castRay(i.position, reflectedDirection, triangles, circles, bounces+1, kdTree, indices, sizeOfindice);
         } else {
 
             vec3 indirect;
@@ -263,7 +263,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
             int neighbours = 500;
             int n = sizeof(indices)/ sizeof(indices[0]);
 
-            quickSort(kdTree, 0, n-1, i.position, indices);
+            quickSort(kdTree, 0, n-1, i.position, indices, sizeOfindice);
 
 
             for (int j = 0; j < neighbours; j++) {
@@ -279,6 +279,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
             
             
+            // hitColor = (directLight + acc)  * objectColor;
             hitColor = acc  * objectColor;
         }
     } else {
@@ -409,7 +410,7 @@ void swap(int* a, int* b){
     *b = t;
 }
 
-int partition(const vector<Photon> &photons, int low, int high, const vec4 pos, int indices[]){
+int partition(const vector<Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice){
     int pivot = indices[high];
     int i = (low - 1);
 
@@ -427,13 +428,13 @@ int partition(const vector<Photon> &photons, int low, int high, const vec4 pos, 
     return (i + 1);
 }
 
-void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int indices[]){
+void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice){
     // printf("LOW: %d\n", low);
     if (low < high) 
     {
-        int pi = partition(photons, low, high, pos, indices);
-        quickSort(photons, low, pi-1, pos, indices);
-        quickSort(photons, pi+1, high, pos, indices);
+        int pi = partition(photons, low, high, pos, indices, sizeOfindice);
+        quickSort(photons, low, pi-1, pos, indices, sizeOfindice);
+        quickSort(photons, pi+1, high, pos, indices, sizeOfindice);
 
     }
     
