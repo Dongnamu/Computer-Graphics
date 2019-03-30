@@ -9,10 +9,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 
-
-
-
-
 using namespace std;
 using glm::vec3;
 using glm::mat3;
@@ -28,8 +24,9 @@ struct Photon {
     vec4 hitPos;
     vec3 color;
     char phi, theta; 
+    vec4 incomingDirection;
     int flag;
-    bool isLeft = true;
+    unsigned long originalIndex;
 };
 
 struct Light{
@@ -70,8 +67,8 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 50
-#define SCREEN_HEIGHT 50
+#define SCREEN_WIDTH 512
+#define SCREEN_HEIGHT 512
 #define FULLSCREEN_MODE true
 
 
@@ -84,7 +81,7 @@ float focal_length = SCREEN_HEIGHT / 2;
 
 Light light = {
   .position = vec4(0, -0.7, -0.7, 1.0),
-  .color =   10.f * vec3(1,1,1),
+  .color =   14.f * vec3(1,1,1),
 };
 
 Camera camera = {
@@ -103,8 +100,6 @@ std::uniform_real_distribution<float> distributiony(light.position[1]-1, light.p
 std::uniform_real_distribution<float> distributionz(light.position[2]-1, light.position[2]+1);
 std::uniform_real_distribution<float> distribution(0 , 1);
 
-
-
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire);
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index=-1);
 bool circleIntersection(vec4 start, vec4 dir, const vector<Circle>& circles, Intersection& closestIntersection, int within_index = -1, bool isInCircle = false);
@@ -113,33 +108,26 @@ vec4 calculateLightDirection();
 int bounceType(const Photon &photon, const Material& material);
 vec3 sampleDirectionVector(const float &r1, const float &r2);
 void createCoordinateSystem(const vec3 &N, vec3 &Nt, vec3 &Nb);
+int getMaximumDimension( vector<Photon>& photons);
+void swap(Photon *a, Photon *b);
+int partition(vector <Photon> &photons, int dim, int low, int high);
 vec4 toVec4(const vec3 x);
 vec3 toVec3(const vec4 x);
 vec4 diffuseDirection(vec4& normal);
 vec4 specularReflection(vec4& normal, vec4& incoming);
 int getMaximumDimension( vector<Photon>& photons);
-void swap(Photon *a, Photon *b);
-int partition(vector <Photon> &photons, int dim, int low, int high);
-void quickSort(vector<Photon> &photons, int dim, int low, int high);
-void swapDistance(WhichPhoton& i, WhichPhoton &j);
-int partitionDistance(vector<WhichPhoton> &maxHeap, int low, int high);
-void quickSortDistance(vector<WhichPhoton>&maxHeap, int low, int high);
-int calculateMedian(vector<Photon> photons, int& dim);
 void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles);
+void Draw(screen* screen, const vector<Triangle>& triangles, vector<Photon>& kdTree, const vector<Circle>& circles);
 void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material);
-void createkdTree(const int index, vector<Photon>& kdTree, vector<Photon>& photons, bool &successful);
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree);
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> kdTree);
+vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
+void linearNN(vector<Photon>& kdTree, vec3& col, const vec4 targetPoint, int &number);
+mat4 generateRotation(vec3 a);
+void createkdTree(const unsigned long index, unsigned long* photonIndex, const int listSize, vector<Photon>& photons, bool &isSuccessful);
 void locate_photons(const unsigned long index, const vector<Photon> kdTree, vector<WhichPhoton>& maxHeap, const vec4 position, float& maxDistance, const int maxSize);
 void searchkdTree(vector<WhichPhoton>& maxHeap, const vector<Photon> kdTree, const vec4 position, const float distance, const int maxSize);
-void quickSortDistance(vector<WhichPhoton>& maxHeap, int low, int high);
-float findMinimum(vector<WhichPhoton>& maxHeap);
-float findMaximum(vector<WhichPhoton>& maxHeap);
-vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree);
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces);
-vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
 
-
-mat4 generateRotation(vec3 a);
 
 
 int main(){
@@ -152,44 +140,50 @@ int main(){
     LoadTestModel(triangles);
     LoadCircles(circles);
     startPhotons(photons, triangles, circles);
-    vector<Photon> kdTree;
-    kdTree.clear();    
-    kdTree.resize(photons.size());
-    vector<WhichPhoton> maxHeap;
-    maxHeap.clear();
+    unsigned long index = 0;
+    unsigned long photonIndex[photons.size()];
+    bool isSuccessful = true;
     printf("STORED PHOTONS: %d\n", photons.size());
-    // printf("KDTREE: %d\n", kdTree.size());
+    createkdTree(index, photonIndex, photons.size(), photons, isSuccessful);
 
-    bool successful = true;
-    createkdTree(0, kdTree, photons, successful);
     
-    printf("KDTREE: %d\n", kdTree.size());
+    printf("KDTREE: %d\n", (sizeof(photonIndex)/sizeof(unsigned long)));
 
-
-
-    for (uint i = 0; i < maxHeap.size(); i++) {
-        printf("%f\n", maxHeap[i].distance);
-    }
-
-      while( !escape )
-    {
+    //   while( !escape )
+    // {
+      Draw(screen, triangles, photons, circles);
+      SDL_Renderframe(screen);
       Update();
-      Draw(screen, triangles, kdTree, circles);
-    //   SDL_Renderframe(screen);
-    }
+      SDL_SaveImage( screen, "screenshot.bmp" );
+
+    // }
 }
 
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles)
+void Draw(screen* screen, const vector<Triangle>& triangles, vector<Photon>& kdTree, const vector<Circle>& circles)
 {
   /* Clear buffer */
+        // startPhotons(photons, triangles, circles);
+        // memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+        // for (uint photon = 0; photon < photons.size(); photon++){
+        //     vec4 photonPos = camera.basis * photons[photon].hitPos; 
+        //     float u = focal_length * photonPos.x/photonPos.z + SCREEN_HEIGHT/2;
+        //     float v = focal_length * photonPos.y/photonPos.z + SCREEN_HEIGHT/2;
+        //     PutPixelSDL(screen, u, v, photons[photon].color);
+        //  }
+
+
     memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-    for (int row=SCREEN_HEIGHT-1; row > 0; row--){
-        for (int col = SCREEN_HEIGHT-1; col > 0; col--){
+    for (int row=0; row < SCREEN_HEIGHT; row++){
+        for (int col = 0; col < SCREEN_WIDTH; col++){
+            
             vec3 c = processingPart(row, col, triangles, circles, kdTree);
             // printf("Aperture: %f\n, Focal Distance %f\n", aperture, focalDistance);
             PutPixelSDL(screen, row, col, c);
-            SDL_Renderframe(screen);
+            // SDL_Renderframe(screen);
+
         }
+
+        printf("ROW: %d\n", row);
     }
 
 }
@@ -201,28 +195,36 @@ vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const v
     vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
     Intersection inter;
 
-    vec3 mainColor = castRay(camera.basis[3], d, triangles, circles, 0);
-    vector<WhichPhoton> maxHeap;
-    maxHeap.clear();
-    if (ClosestIntersection(camera.basis[3], d, triangles, circles, inter)){
-        searchkdTree(maxHeap, kdTree, inter.position, 0.3, 20);
-        vec3 indirectLight (0,0,0);
+    vec3 mainColor = castRay(camera.basis[3], d, triangles, circles, 0, kdTree);
 
-        for (uint i = 0; i < maxHeap.size(); i++){
-            indirectLight += kdTree[maxHeap[i].index].color;
-        }
-        // if (maxHeap.size() == 0) printf("HERE\n");
-
-        if (maxHeap.size() != 0) indirectLight /= maxHeap.size();
-        color = indirectLight;
-        // mainColor /= 2;
-
-    }
-
-    return color;
+    return mainColor;
 }
 
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces){
+
+void linearNN(vector<Photon>& kdTree, vec3& col, const vec4 targetPoint, int &number){
+    float distance = maxFloat;
+    int index = -1;
+    for (uint i = 0; i < kdTree.size(); i++){
+        if (kdTree[i].flag == 1) continue;
+        float d = abs(glm::distance(targetPoint, kdTree[i].hitPos));
+        if (d < distance) {
+            distance = d;
+            col = kdTree[i].color;
+            index = i;
+
+        }     
+    }
+    if (index == -1) printf("HERE\n");
+
+
+    number = index;
+
+    kdTree[index].flag = 1;
+}
+
+
+
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> kdTree){
     if (bounces > 2) return vec3(0,0,0);
     Intersection i;
     vec3 hitColor(0,0,0);
@@ -243,16 +245,131 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
         if (isMirror){
             vec4 reflectedDirection = specularReflection(normal, d);
-            hitColor += 0.8f * castRay(i.position, reflectedDirection, triangles, circles, bounces+1);
+            hitColor += 0.8f * castRay(i.position, reflectedDirection, triangles, circles, bounces+1, kdTree);
         } else {
-
+            vec3 indirect;
             vec3 directLight = DirectLight(i, triangles, circles);
-            hitColor += directLight * objectColor;
+            vec3 acc (0,0,0);
+            int index;
+            vector<Photon> copy = kdTree;
+            int neighbours = 500;
+            for (int j = 0; j < neighbours; j++) {
+                linearNN(copy, indirect, i.position, index);
+                float weight = (max(glm::dot((kdTree[index].incomingDirection), normal), 0.f));
+                acc += indirect * weight;
+            }
+            float radius = abs(glm::distance(i.position, normalize(kdTree[index].hitPos)));
+            float area = float(PI) * pow(radius, 2);
+            acc /= area;
+            // acc /= neighbours;
+            if (acc.x == 0 && acc.y == 0 && acc.z ==0)std::cout<<glm::to_string(acc)<<std::endl;
+
+
+            
+            
+            hitColor = (directLight + acc)  * objectColor;
         }
     } else {
         return vec3(0,0,0);
     }
     return hitColor;
+}
+
+void swap(Photon *a, Photon *b){
+    Photon *temp = a;
+    *a = *b;
+    *b = *temp;
+}
+
+int getMaximumDimension( vector<Photon>& photons){
+    float difference = minFloat;
+    int dim = -1;
+
+    for (int dimension = 0; dimension < 3; dimension++){
+        float max = minFloat; 
+        float min = maxFloat; 
+
+        for (uint i = 0; i < photons.size(); i++){
+            if (photons[i].hitPos[dimension] > max) max = photons[i].hitPos[dimension];
+            if (photons[i].hitPos[dimension] < min) min = photons[i].hitPos[dimension];
+        }
+        if (max - min > difference) {
+            difference = max-min;
+            dim = dimension;
+        }
+    }
+
+    return dim;
+}
+
+int partition(vector <Photon> &photons, int dim, int low, int high){
+    int pivot = photons[high].hitPos[dim];
+    // if (dim == -1) printf("Pivot: %d\n",pivot);
+    int i = (low - 1);
+
+    for (int j = low; j <= high - 1; j++)
+    {
+        if (photons[j].hitPos[dim] <= pivot)
+        {
+            i++;
+            swap(&photons[i], &photons[j]);
+        }
+    }
+    swap(&photons[i+1], &photons[high]);
+    return (i + 1);
+}
+
+void quickSort(vector<Photon> &photons, int dim, int low, int high){
+    if (low < high) 
+    {
+        int pi = partition(photons, dim, low, high);
+        quickSort(photons, dim, low, pi-1);
+        quickSort(photons, dim, pi+1, high);
+    }
+}
+
+int calculateMedian(vector<Photon> photons, int& dim){
+    quickSort(photons, dim,  0, photons.size()-1);
+
+    return floor(photons.size()/2);
+}
+
+void createkdTree(const unsigned long index, unsigned long* photonIndex, const int listSize, vector<Photon>& photons, bool &isSuccessful){
+    if (photons.size() == 0) {
+        isSuccessful = false;
+        return;
+    }
+    if (photons.size() == 1) {
+        photons[0].flag = -1;
+        isSuccessful = true;
+        if (index < listSize) photonIndex[index] = photons[0].originalIndex;
+        return;
+    }
+    int dim = getMaximumDimension(photons);
+
+    int median = calculateMedian(photons, dim);
+
+    photons[median].flag = dim;
+    photonIndex[index] = photons[median].originalIndex;
+
+    vector <Photon> left;
+    vector <Photon> right;
+
+    for (uint i = 0; i < photons.size(); i++){
+        if (i < median){
+            left.push_back(photons[i]);
+        }
+        if (i > median){
+            right.push_back(photons[i]);
+        }
+    }
+
+
+    createkdTree(2 * index + 1, photonIndex, listSize, left, isSuccessful);
+    if (isSuccessful) createkdTree(2 * index + 2, photonIndex, listSize, right, isSuccessful);
+    else createkdTree(2 * index + 1, photonIndex, listSize, right, isSuccessful);
+
+    return;
 }
 
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire){
@@ -287,7 +404,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
         {
             case DIFFUSE: 
             {
-                photon.color *= objectColor/float(PI);
+                // photon.color *= objectColor;
 
                 int theta = int(acos(d[2])*(256.0/PI) );
                 if (theta>255)
@@ -303,15 +420,19 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                 else
                     photon.phi = (unsigned char)phi;
                 // printf("DIFFUSE\n");
+                photon.incomingDirection = normalize(d);
                 photon.hitPos = i.position;
+                photon.originalIndex = photons.size();
                 photons.push_back(photon);
+                
 
                     
                 Photon newPhoton;
                 scalePower(DIFFUSE, photon, newPhoton, objectMaterial);
-                // newPhoton.color *= objectColor;
+                newPhoton.color *= objectColor;
                 vec4 outDir = diffuseDirection(objectNormal);
-                firePhoton(i.position + toVec4(outDir) * 0.1f, outDir, photons, newPhoton, triangles, circles, n_fire + 1);
+                firePhoton(i.position + toVec4(outDir) * 0.001f, outDir, photons, newPhoton, triangles, circles, n_fire + 1);
+
                 /* code */
                 break;
             }
@@ -367,252 +488,6 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const
     
 }
 
-
-
-int getMaximumDimension( vector<Photon>& photons){
-    float difference = minFloat;
-    int dim = -1;
-
-    for (int dimension = 0; dimension < 3; dimension++){
-        float max = minFloat; 
-        float min = maxFloat; 
-
-        for (uint i = 0; i < photons.size(); i++){
-            if (photons[i].hitPos[dimension] > max) max = photons[i].hitPos[dimension];
-            if (photons[i].hitPos[dimension] < min) min = photons[i].hitPos[dimension];
-        }
-        if (max - min > difference) {
-            difference = max-min;
-            dim = dimension;
-        }
-    }
-
-    return dim;
-}
-
-void swap(Photon *a, Photon *b){
-    Photon temp = *a;
-    *a = *b;
-    *b = temp;
-}
-
-int partition(vector <Photon> &photons, int dim, int low, int high){
-    int pivot = photons[high].hitPos[dim];
-    // if (dim == -1) printf("Pivot: %d\n",pivot);
-    int i = (low - 1);
-
-    for (int j = low; j <= high - 1; j++)
-    {
-        if (photons[j].hitPos[dim] <= pivot)
-        {
-            i++;
-            swap(&photons[i], &photons[j]);
-        }
-    }
-    swap(&photons[i+1], &photons[high]);
-    return (i + 1);
-}
-
-void quickSort(vector<Photon> &photons, int dim, int low, int high){
-    if (low < high) 
-    {
-        int pi = partition(photons, dim, low, high);
-        quickSort(photons, dim, low, pi-1);
-        quickSort(photons, dim, pi+1, high);
-    }
-}
-
-void swapDistance(WhichPhoton& i, WhichPhoton& j) {
-    WhichPhoton temp = i;
-    i = j;
-    j = temp;
-}
-
-int partitionDistance(vector<WhichPhoton>& maxHeap, int low, int high) {
-    float pivot = maxHeap[high].distance;
-
-    int i = low - 1;
-
-    for (int j = low; j <= high - 1; j++) {
-        if  (maxHeap[j].distance <= pivot) {
-            i++;
-            swapDistance(maxHeap[i], maxHeap[j]);
-        }
-    }
-
-    swap(maxHeap[i + 1], maxHeap[high]);
-    return i + 1;
-}
-
-
-void quickSortDistance(vector<WhichPhoton>& maxHeap, int low, int high) {
-
-    if (maxHeap.size() == 1) return;
-
-    if (low < high) {
-        int pi = partitionDistance(maxHeap, low, high);
-
-        quickSortDistance(maxHeap, low, pi - 1);
-        quickSortDistance(maxHeap, pi + 1, high);
-    }
-}
-
-int calculateMedian(vector<Photon> photons, int& dim){
-    quickSort(photons, dim,  0, photons.size()-1);
-
-    return floor(photons.size()/2);
-}
-
-void createkdTree(const int index, vector<Photon>& kdTree,  vector<Photon>& photons, bool &successful){
-    if (photons.size() == 0) {
-        // printf("Nothing is here with index %d\n", index);
-        successful = false;
-        return;
-    }
-    if (photons.size() == 1) {
-        photons[0].flag = -1;
-        // printf("There leftis only one here with index %d\n", index);
-        if (index < kdTree.size()) kdTree[index] = photons[0];
-        return;
-    }
-    int dim = getMaximumDimension(photons);
-
-    int median = calculateMedian(photons, dim);
-
-    photons[median].flag = dim;
-    kdTree[index] = photons[median];
-
-    vector <Photon> left;
-    vector <Photon> right;
-
-    for (uint i = 0; i < photons.size(); i++){
-        if (i < (median - 1)){
-            left.push_back(photons[i]);
-        } 
-        if (i > (median - 1)){
-            right.push_back(photons[i]);
-        }
-    }
-
-    // printf("Index %d, median is %d\n", index, median);
-    // printf("Index %d, left size is %d\n", index, left.size());
-    // printf("Index %d, right size is %d\n\n", index, right.size());
-
-    if (left.size() == 0) {
-        createkdTree(2 * index + 1, kdTree, right, successful);
-    } else {
-        createkdTree(2 * index + 1, kdTree, left, successful);
-        createkdTree(2 * index + 2, kdTree, right, successful);
-    }
-    // createkdTree(2 * index + 1, kdTree, left, successful);
-    // if (!successful) {
-    //     kdTree[index].isLeft = false;
-    //     createkdTree(2 * index + 1, kdTree, right, successful);
-    // } else {
-    //     kdTree[index].isLeft = true;
-    //     createkdTree(2 * index + 2, kdTree, right, successful);
-    // }
-
-    return;
-}
-
-float findMaximum(vector<WhichPhoton>& maxHeap) {
-    if (maxHeap.size() == 0) return maxFloat;
-    return maxHeap[maxHeap.size() - 1].distance;
-}
-
-float findMinimum(vector<WhichPhoton>& maxHeap) {
-    if (maxHeap.size() == 0) return minFloat;
-    return maxHeap[0].distance;
-}
-
-
-void locate_photons(const unsigned long index, const vector<Photon> kdTree, vector<WhichPhoton>& maxHeap, const vec4 position, float& maxDistance, const int maxSize) {
-    unsigned long right;
-    if (kdTree[index].isLeft) right = 2 * index + 2;
-    else right = 2 * index + 1;
-
-    unsigned long left = 2 * index + 1;
-    unsigned long leftover = 0;
-
-    if (right < kdTree.size()) {
-
-        int dimension = kdTree[index].flag;
-
-        float distance;
-
-        if (dimension == -1) {
-            float distances[3];
-
-            for (int i = 0; i < 3; i++) {
-                distances[i] = kdTree[index].hitPos[i] - position[i];
-            }
-
-            float maximum = minFloat;
-            int biggest;
-
-            for (int i = 0; i < 3; i++) {
-                if (fabs(distances[i]) > maximum) {
-                    maximum = fabs(distances[i]);
-                    biggest = i;
-                }
-            }
-
-            distance = distances[biggest];
-        } else distance = kdTree[index].hitPos[dimension] - position[dimension];
-
-        if (distance < 0) {
-            if (kdTree[index].isLeft) locate_photons(left, kdTree, maxHeap, position, maxDistance, maxSize);
-            // leftover = right;
-            if (pow(distance, 2) < findMaximum(maxHeap)) {
-                locate_photons(right, kdTree, maxHeap, position, maxDistance, maxSize);
-            }
-
-        } else {
-            locate_photons(right, kdTree, maxHeap, position, maxDistance, maxSize);
-            // leftover = left;
-            if (pow(distance, 2) < findMaximum(maxHeap) && kdTree[index].isLeft) {
-                locate_photons(left, kdTree, maxHeap, position, maxDistance, maxSize);
-            }
-        }
-
-    }
-
-    float distance = pow(glm::distance(kdTree[index].hitPos, position), 2); 
-
-    if (distance < maxDistance) {
-        
-        float maximum = findMaximum(maxHeap);
-
-        if (distance < maximum) {
-
-            if (maxHeap.size() == maxSize) {
-                maxHeap.erase(maxHeap.begin() + maxSize - 1);
-            }
-
-            WhichPhoton newItem = {
-                .index = index,
-                .distance = distance
-            };
-            maxHeap.push_back(newItem);
-            quickSortDistance(maxHeap, 0, maxHeap.size() - 1);
-
-        }
-
-        maxDistance = findMaximum(maxHeap);
-    }
-}
-
-void searchkdTree(vector<WhichPhoton>& maxHeap, const vector<Photon> kdTree, const vec4 position, const float distance, const int maxSize) {
-
-    float maxDistance = pow(distance, 2);
-
-    locate_photons(0, kdTree, maxHeap, position, maxDistance, maxSize);
-
-}
-
-
-
 vec4 calculateLightDirection(){
     float x = distributionx(generator);
     float y = distributiony(generator);
@@ -627,7 +502,7 @@ vec4 calculateLightDirection(){
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles) {
-    int numberOfPhotons = 100000;
+    int numberOfPhotons = 200000;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;
