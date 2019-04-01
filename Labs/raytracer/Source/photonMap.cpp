@@ -70,9 +70,9 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 512
-#define SCREEN_HEIGHT 512
-#define FULLSCREEN_MODE false
+#define SCREEN_WIDTH 256
+#define SCREEN_HEIGHT 256
+#define FULLSCREEN_MODE true
 mat4 R;
 bool escape = false;
 
@@ -82,12 +82,12 @@ float focal_length = SCREEN_HEIGHT / 2;
 
 Light light = {
   .position = vec4(0, -0.99, -0.4, 1.0),
-  .color = 200000.f * vec3(1,1,1),
+  .color = 15.f * vec3(1,1,1),
 };
 
 Camera camera = {
   .position = vec4(0,0,0, 1.0),
-  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0, 2, 1.0)),
+  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0, -2, 1.0)),
   // .center = vec3(0.003724, 0.929729, 0.07459)
   .center = vec3(0,0,0)
 };
@@ -142,16 +142,26 @@ int main(){
 
     vector<Triangle> triangles;
     vector<Photon> photons;
+    vector<Photon> caustics;
+    vector<Photon> full;
+
     vector<Circle> circles;
     LoadTestModel(triangles);
     LoadCircles(circles);
-    startPhotons(photons, triangles, circles, true, true);
+    startPhotons(caustics, triangles, circles, true, true);
+    startPhotons(photons, triangles, circles, true, false);
+
+    
     printf("STORED PHOTONS: %d\n", photons.size());
 
     uint32_t indices[photons.size()];
 
     for (int i = 0; i < photons.size(); i++){
-        indices[i] = i;
+        full.push_back(photons[i]);
+    }
+
+    for (int i = 0; i < caustics.size(); i++){
+        full.push_back(caustics[i]);
     }
 
 
@@ -159,7 +169,7 @@ int main(){
       while( !escape )
     {
       Update();
-      Draw(screen, triangles, photons, circles, indices, false);
+      Draw(screen, triangles, full, circles, indices, false);
       SDL_Renderframe(screen);
       Update();
 
@@ -169,29 +179,29 @@ int main(){
 void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, uint32_t * indices, bool isPhoton)
 {
   /* Clear buffer */
-        memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-        for (uint photon = 0; photon < kdTree.size(); photon++){
-            vec4 photonPos = camera.basis * kdTree[photon].hitPos; 
-            float u = focal_length * photonPos.x/photonPos.z + SCREEN_HEIGHT/2;
-            float v = focal_length * photonPos.y/photonPos.z + SCREEN_HEIGHT/2;
-            PutPixelSDL(screen, u, v, kdTree[photon].color);
-         }
+        // memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+        // for (uint photon = 0; photon < kdTree.size(); photon++){
+        //     vec4 photonPos = camera.basis * kdTree[photon].hitPos; 
+        //     float u = focal_length * photonPos.x/photonPos.z + SCREEN_HEIGHT/2;
+        //     float v = focal_length * photonPos.y/photonPos.z + SCREEN_HEIGHT/2;
+        //     PutPixelSDL(screen, u, v, kdTree[photon].color);
+        //  }
 
 
-    // memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+    memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
     
-    // for (int row=0; row < SCREEN_HEIGHT; row++){
-    //     for (int col = 0; col < SCREEN_WIDTH; col++){
+    for (int row=0; row < SCREEN_HEIGHT; row++){
+        for (int col = 0; col < SCREEN_WIDTH; col++){
             
-    //         vec3 c = processingPart(row, col, triangles, circles, kdTree, indices, isPhoton);
-    //         // printf("Aperture: %f\n, Focal Distance %f\n", aperture, focalDistance);
-    //         PutPixelSDL(screen, row, col, c);
+            vec3 c = processingPart(row, col, triangles, circles, kdTree, indices, isPhoton);
+            // printf("Aperture: %f\n, Focal Distance %f\n", aperture, focalDistance);
+            PutPixelSDL(screen, row, col, c);
 
-    //     }
-    //     // SDL_Renderframe(screen);
-    //     // printf("ROW: %d\n", row);
+        }
+        SDL_Renderframe(screen);
+        // printf("ROW: %d\n", row);
         
-    // }
+    }
 
 }
 
@@ -246,12 +256,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
         if (isMirror){
             vec4 reflectedDirection = specularReflection(normal, d);
             hitColor += 0.8f * castRay(i.position, reflectedDirection, triangles, circles, bounces+1, kdTree, indices, isPhoton);
-        } else if  (isGlass){
-            
-            
-
-            
-        } else {
+        }  else {
 
             vec3 indirect;
             vec3 directLight = DirectLight(i, triangles, circles, isPhoton);
@@ -294,7 +299,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire, bool isPhoton){
     Intersection i;
-    if (n_fire > 2) return;
+    if (n_fire > 3) return;
     // if (photon.color.x < 0.1 && photon.color.y < 0.1 && photon.color.z < 0.1) {
     //     // printf("DEAD PHOTON\n");
     //     return;
@@ -340,7 +345,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                     photon.phi = (unsigned char)(phi+256);
                 else
                     photon.phi = (unsigned char)phi;
-                printf("DIFFUSE\n");
+                // printf("DIFFUSE\n");
                 photon.incomingDirection = normalize((d));
                 photon.hitPos = i.position;
                 photons.push_back(photon);
@@ -525,7 +530,7 @@ vec4 calculateCausticsDirection(const vector<Circle>& circles) {
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles, bool isPhoton, bool Caustics) {
-    float numberOfPhotons = 200000;
+    float numberOfPhotons = 50000;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;

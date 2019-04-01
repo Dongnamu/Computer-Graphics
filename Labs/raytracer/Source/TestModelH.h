@@ -32,8 +32,8 @@ Material specular = {
 
 Material glass = {
 	.specular = 0.0,
-	.refraction = 0.8,
-	.absorption = 0.2,
+	.refraction = 1,
+	.absorption = 0.0,
 	.diffuse = 0.0
 };
 
@@ -105,7 +105,7 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	vec4 A(433,330,247,1);
 	vec4 B(323,330,147,1);
-	vec4 C(200, 255, 400,1);
+	vec4 C(400, 140, 200,1);
 
 	// circles.push_back(Circle(C, 60, white, false, false, diffuse));
 	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
