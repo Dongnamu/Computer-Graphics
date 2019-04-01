@@ -70,8 +70,8 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 128
+#define SCREEN_WIDTH 256
+#define SCREEN_HEIGHT 256
 #define FULLSCREEN_MODE true
 mat4 R;
 bool escape = false;
@@ -82,7 +82,7 @@ float focal_length = SCREEN_HEIGHT / 2;
 
 Light light = {
   .position = vec4(0, -0.99, -0.4, 1.0),
-  .color =  30.f * vec3(1,1,1),
+  .color = 10.f * vec3(1,1,1),
 };
 
 Camera camera = {
@@ -178,6 +178,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon
 
 
     memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+    
     for (int row=0; row < SCREEN_HEIGHT; row++){
         for (int col = 0; col < SCREEN_WIDTH; col++){
             
@@ -216,7 +217,7 @@ void linearNN(const vector<Photon>& kdTree, const vec4 targetPoint, vector <int>
 
 
 vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces,  const vector<Photon> kdTree, uint32_t * indices , bool isPhoton){
-    if (bounces > 2) return vec3(0,0,0);
+    if (bounces > 3) return vec3(0,0,0);
     Intersection i;
     vec3 hitColor(0,0,0);
 
@@ -247,25 +248,33 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
             vec3 indirect;
             vec3 directLight = DirectLight(i, triangles, circles, isPhoton);
             vec3 acc (0,0,0);
-            const float radius = 0.05f;
+            const float radius = 0.1f;
 
             vector<Photon> copy = kdTree;
             vector<int> indexes;
             
 
             linearNN(kdTree, i.position, indexes, radius);
+            int n = 10000;
 
+            if (indexes.size() < n){
+                n = indexes.size();
+            }
             for (uint j = 0; j < indexes.size(); j++) {   
-                float weight = (max(glm::dot(kdTree[indexes[j]].incomingDirection, normal), 0.f));
-                acc += kdTree[indexes[j]].color  * weight;
+                float weight;
+                if (i.isTriangle){
+                    weight = (max(glm::dot(abs(kdTree[indexes[j]].incomingDirection), abs(normal)), 0.f));
+                } else {
+                    weight = abs(glm::dot((-kdTree[indexes[j]].incomingDirection), normal));
+                }
+                acc += kdTree[indexes[j]].color * weight;
             }
 
-            // printf("PHOTONS FOUND: %d\n", indexes.size());
 
             float area =   float(PI) * pow(radius, 2);
             acc /= area;
             
-            hitColor = acc;
+            hitColor =  (acc )  ;
             
         }
     } else {
@@ -277,7 +286,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire, bool isPhoton){
     Intersection i;
-    if (n_fire > 4) return;
+    if (n_fire > 3) return;
     // if (photon.color.x < 0.1 && photon.color.y < 0.1 && photon.color.z < 0.1) {
     //     // printf("DEAD PHOTON\n");
     //     return;
@@ -295,7 +304,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
         }
         else {
             isCircle = true;
-            printf("CIRCLE\n");
+            // printf("CIRCLE\n");
             objectNormal = i.circleNormal;
             objectColor = circles[i.circleIndex].color;
             objectMaterial = circles[i.circleIndex].material;
@@ -324,7 +333,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                 else
                     photon.phi = (unsigned char)phi;
                 // printf("DIFFUSE\n");
-                photon.incomingDirection = normalize(d);
+                photon.incomingDirection = normalize((d));
                 photon.hitPos = i.position;
                 photons.push_back(photon);
                 
@@ -338,7 +347,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                 vec4 outDir = diffuseDirection(objectNormal, random);
                 newPhoton.color *=  objectColor ;
                 
-                firePhoton(i.position + toVec4(outDir) * 0.001f, outDir, photons, newPhoton, triangles, circles, n_fire + 1, isPhoton);
+                firePhoton(i.position , outDir, photons, newPhoton, triangles, circles, n_fire + 1, isPhoton);
 
                 /* code */
                 break;
@@ -354,6 +363,9 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                 break;
             }
             case ABSORPTION:
+                photon.incomingDirection = normalize(d);
+                photon.hitPos = i.position;
+                photons.push_back(photon);
                 // printf("ABSORPTION\n");
                 break;
             default:
@@ -385,7 +397,7 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const
     Intersection intersect;
     if (ClosestIntersection(i.position, direction, triangles, circles, intersect, isPhoton, i.triangleIndex)){
         if (glm::distance(i.position, intersect.position) < r && glm::distance(i.position, intersect.position) >= 1e-3) {
-        return vec3(0,0,0);
+        return vec3(0.1,0.1,0.1);
         }
     }
 
@@ -403,14 +415,14 @@ vec4 calculateLightDirection(){
 
     vec4 randomPoint (x,y,z, 1);
 
-    vec4 direction = randomPoint - light.position;
+    vec4 direction =   randomPoint - light.position ;
 
     return normalize(direction);
 
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles, bool isPhoton) {
-    float numberOfPhotons = 10000;
+    float numberOfPhotons = 20000;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;
@@ -418,7 +430,6 @@ void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, co
 
         vec4 direction = calculateLightDirection();
         firePhoton(light.position, direction, photons, photon, triangles, circles, 1, isPhoton);
-
     }
 
 }
@@ -541,9 +552,7 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
     vec3 L = vec3(L4);
     vec3 d3 = vec3(d);
 
-    float a;
-    if (isPhoton) a = 1;
-    else a = dot(d3 ,d3);
+    float a = dot(d3 ,d3);
     float b = 2 * dot(d3, L);
     float c = dot(L, L) - pow(circles[i].radius, 2);
 
@@ -568,10 +577,10 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
     if (t0 < closestIntersection.distance) {
       // printf("I'm here\n");
       closestIntersection.distance = t0;
-      closestIntersection.position = s + t0 * d;
+      closestIntersection.circleNormal = normalize((s + t0 * d) - circles[i].center);
+      closestIntersection.position = (s + t0 * d) + closestIntersection.circleNormal * 0.00001f;
       closestIntersection.isTriangle = false;
       closestIntersection.circleIndex = i;
-      closestIntersection.circleNormal = normalize(circles[i].center - (s + t0 * d));
     }
   }
 

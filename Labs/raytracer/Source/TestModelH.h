@@ -98,11 +98,11 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	vec4 A(433,330,247,1);
 	vec4 B(323,330,147,1);
-	vec4 C(465,330,467,1);
+	vec4 C(200, 255, 400,1);
 
-	circles.push_back(Circle(C, 60, white, false, false, diffuse));
+	// circles.push_back(Circle(C, 60, white, false, false, diffuse));
 	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
-	// circles.push_back(Circle(C, 60, yellow, true, specular));
+	circles.push_back(Circle(C, 120, white, false, false, diffuse));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
@@ -159,12 +159,12 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	triangles.push_back( Triangle( C, D, B, white ) );
 
 	// Left wall
-	triangles.push_back( Triangle( A, E, C, white) );
-	triangles.push_back( Triangle( C, E, G, white) );
+	triangles.push_back( Triangle( A, E, C, red) );
+	triangles.push_back( Triangle( C, E, G, red) );
 
 	// Right wall
-	triangles.push_back( Triangle( F, B, D, blue));
-	triangles.push_back( Triangle( H, F, D, blue) );
+	triangles.push_back( Triangle( F, B, D, blue, true, specular));
+	triangles.push_back( Triangle( H, F, D, blue, true, specular) );
 
 	// Ceiling
 	triangles.push_back( Triangle( E, F, G, white) );
