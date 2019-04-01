@@ -8,10 +8,7 @@
 #include "random"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
-
-
-
-
+#include <math.h>
 
 using namespace std;
 using glm::vec3;
@@ -22,6 +19,8 @@ using glm::mat4;
 float maxFloat = std::numeric_limits<float>::max();
 float minFloat = std::numeric_limits<float>::min();
 
+unsigned long maxLong = std::numeric_limits<unsigned long>::max();
+
 
 
 struct Photon {
@@ -30,6 +29,7 @@ struct Photon {
     char phi, theta; 
     vec4 incomingDirection;
     int flag;
+    unsigned long originalIndex;
 };
 
 struct Light{
@@ -103,8 +103,6 @@ std::uniform_real_distribution<float> distributiony(light.position[1]-1, light.p
 std::uniform_real_distribution<float> distributionz(light.position[2]-1, light.position[2]+1);
 std::uniform_real_distribution<float> distribution(0 , 1);
 
-
-
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire);
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index=-1);
 bool circleIntersection(vec4 start, vec4 dir, const vector<Circle>& circles, Intersection& closestIntersection, int within_index = -1, bool isInCircle = false);
@@ -113,29 +111,26 @@ vec4 calculateLightDirection();
 int bounceType(const Photon &photon, const Material& material);
 vec3 sampleDirectionVector(const float &r1, const float &r2);
 void createCoordinateSystem(const vec3 &N, vec3 &Nt, vec3 &Nb);
+int getMaximumDimension( vector<Photon>& photons);
+void swap(Photon *a, Photon *b);
+int partition(vector <Photon> &photons, int dim, int low, int high);
+void quickSort(vector<Photon> &photons, int dim, int low, int high);
 vec4 toVec4(const vec3 x);
 vec3 toVec3(const vec4 x);
 vec4 diffuseDirection(vec4& normal);
 vec4 specularReflection(vec4& normal, vec4& incoming);
-
-
-
-void swap(int* a, int* b);
-int partition(const vector <Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice);
-void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice);
-
+int getMaximumDimension( vector<Photon>& photons);
 void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int *indices, int sizeOfindice);
+void Draw(screen* screen, const vector<Triangle>& triangles, vector<Photon>& kdTree, const vector<unsigned long> &photonIndex, const vector<int> &dimensions, const int photonSize, const vector<Circle>& circles);
 void scalePower(const int& reflectionType, const Photon& incomingPhoton, Photon& outwardsPhoton, const Material& material);
-
-
-vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int *indices, int sizeOfindice);
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces,  const vector<Photon> kdTree, int *indices, int sizeOfindice);
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, const vector<unsigned long> &photonIndex, const int photonSize, const vector<int> &dimensions);
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> &kdTree, const vector<unsigned long> &photonIndex, const vector<int> &dimensions, const int photonSize);
 vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const vector<Circle>& circles);
-
-
 mat4 generateRotation(vec3 a);
-
+void createkdTree(const unsigned long index, vector<unsigned long>& photonIndex, vector<int>& dimensions, vector<Photon>& photons, const int photonSize, bool &isSuccessful);
+void searchkdTree(int index, vector<WhichPhoton> &closest, const int maxSize, int &occupied, const vector<unsigned long> &photonIndex, const vector<int> &dimensions, const vector<Photon> &photons, const int photonSize, const vec4 position, float maxDistance);
+void max_heapify(vector<WhichPhoton> &closest, int i, int n);
+void build_maxheap(vector<WhichPhoton> &closest, int n);
 
 int main(){
     screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
@@ -147,70 +142,48 @@ int main(){
     LoadTestModel(triangles);
     LoadCircles(circles);
     startPhotons(photons, triangles, circles);
+    unsigned long index = 0;
+    vector<unsigned long> photonIndex;
+    vector<int> dimensions;
+
+    int size = 1 + pow(2, int(ceil(log2(photons.size()))));
+
+    printf("Size is %d\n", size);
+
+    for (int i = 0; i < size; i++) {
+        photonIndex.push_back(maxLong);
+        dimensions.push_back(-2);
+    }
+    bool isSuccessful = true;
+
     printf("STORED PHOTONS: %d\n", photons.size());
 
-    int indices[photons.size()];
-
-    for (int i = 0; i < photons.size(); i++){
-        // float distance = glm::distance(photons[i].hitPos, vec4(0,0,0,1));
-        // printf("DISTANCE TO ORIGIN: %f\n", distance);
-        indices[i] = i;
-    }
-    // printf("SORTING\n");
-    // int n = sizeof(indices)/ sizeof(indices[0]);
-    // quickSort(photons, 0, n-1, vec4(0,0,0,1), indices);
-
-    // for (int i = 0; i < photons.size(); i++){
-    //     float distance = glm::distance(photons[indices[i]].hitPos, vec4(0,0,0,1));
-    //     printf("DISTANCE TO ORIGIN: %f\n", distance);
-    //     // std::cout<<glm::to_string(photons[indices[i]].hitPos)<<std::endl;
-    // }
-
-
-
+    createkdTree(index, photonIndex, dimensions, photons, size, isSuccessful);
     
-    // for (uint i = 0; i < kdTree.size(); i++) {
-    //     printf("=========================================\n");
-    //     printf("DIMENSION: %d\n", kdTree[i].flag);
-    //     printf("PARENT: ");
-    //     std::cout<<glm::to_string(kdTree[i].hitPos)<<std::endl;
-    //     printf("LEFT CHILD: ");
-    //     std::cout<<glm::to_string(kdTree[2*i].hitPos)<<std::endl;
-    //     printf("RIGHT CHILD: ");
-    //     std::cout<<glm::to_string(kdTree[2*i + 1].hitPos)<<std::endl;
+    printf("KDTREE: %d\n", photonIndex.size());
 
-
-    // }
+    // printf("Value of photonIndex: %d, %d, %d, %d, %d\n", photonIndex[0], photonIndex[1], photonIndex[2], photonIndex[3], photonIndex[4]);
+    // printf("Dimension: %d, %d, %d, %d, %d\n", dimensions[0],dimensions[1], dimensions[2], dimensions[3], dimensions[4]);
 
       while( !escape )
     {
-      Update();
-      Draw(screen, triangles, photons, circles, indices, photons.size());
+      Draw(screen, triangles, photons, photonIndex, dimensions, photons.size(), circles);
       SDL_Renderframe(screen);
+      Update();
+
     }
+      SDL_SaveImage( screen, "screenshot.bmp" );
 }
 
-void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon>& kdTree, const vector<Circle>& circles, int *indices, int sizeOfindice)
+void Draw(screen* screen, const vector<Triangle>& triangles, vector<Photon>& kdTree, const vector<unsigned long> &photonIndex, const vector<int> &dimensions, const int photonSize, const vector<Circle>& circles)
 {
-  /* Clear buffer */
-        // startPhotons(photons, triangles, circles);
-        // memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-        // for (uint photon = 0; photon < photons.size(); photon++){
-        //     vec4 photonPos = camera.basis * photons[photon].hitPos; 
-        //     float u = focal_length * photonPos.x/photonPos.z + SCREEN_HEIGHT/2;
-        //     float v = focal_length * photonPos.y/photonPos.z + SCREEN_HEIGHT/2;
-        //     PutPixelSDL(screen, u, v, photons[photon].color);
-        //  }
-
 
     memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-    for (int row=0; row < SCREEN_HEIGHT; row++){
+    for (int row= 0; row < SCREEN_HEIGHT; row++){
         for (int col = 0; col < SCREEN_WIDTH; col++){
             
-            vec3 c = processingPart(row, col, triangles, circles, kdTree, indices, sizeOfindice);
-            // printf("Aperture: %f\n, Focal Distance %f\n", aperture, focalDistance);
+            vec3 c = processingPart(row, col, triangles, circles, kdTree, photonIndex, photonSize, dimensions);
             PutPixelSDL(screen, row, col, c);
-            // SDL_Renderframe(screen);
 
         }
 
@@ -219,21 +192,103 @@ void Draw(screen* screen, const vector<Triangle>& triangles, const vector<Photon
 
 }
 
-vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, int *indices, int sizeOfindice){
+vec3 processingPart(int row, int col, const vector<Triangle>& triangles, const vector<Circle>& circles, const vector<Photon>& kdTree, const vector<unsigned long> &photonIndex, const int photonSize, const vector<int> &dimensions){
     Intersection intersect;
     vec3 color(0.f, 0.f, 0.f);
     vec3 shadow(0.f, 0.f, 0.f);
     vec4 d = camera.basis * vec4(row - SCREEN_WIDTH/2, col - SCREEN_HEIGHT/2, focal_length, 1);
     Intersection inter;
 
-    vec3 mainColor = castRay(camera.basis[3], d, triangles, circles, 0, kdTree, indices, sizeOfindice);
+    vec3 mainColor = castRay(camera.basis[3], d, triangles, circles, 0, kdTree, photonIndex, dimensions, photonSize);
 
     return mainColor;
 }
 
+void max_heapify(vector<WhichPhoton> &closest, int i, int n) {
+    int j;
+    WhichPhoton temp = closest[i];
+    j = 2 * i;
+    while (j <= n)
+    {
+        if (j < n && closest[j+1].distance > closest[j].distance)
+            j = j + 1;
+        if (temp.distance > closest[j].distance)
+            break;
+        else if (temp.distance <= closest[j].distance)
+        {
+            closest[j / 2] = closest[j];
+            j = 2 * j;
+        }
+    }
+    closest[j/2] = temp;
+    return;
+}
+
+void build_maxheap(vector<WhichPhoton> &closest, int n) {
+    int i;
+    for(i = n/2; i >= 1; i--)
+    {
+        max_heapify(closest,i,n);
+    }
+}
+
+void searchkdTree(int index, vector<WhichPhoton> &closest, const int maxSize, int &occupied, const vector<unsigned long> &photonIndex, const vector<int> &dimensions, const vector<Photon> &photons, const int photonSize, const vec4 position, float maxDistance) {
+    int right = index * 2 + 2;
+    int left = index * 2 + 1;
+
+    if (right < photonSize) {
+        int dimension = dimensions[index];
+        if (dimension > -1) {
+            
+            float distance = photons[photonIndex[index]].hitPos[dimension] - position[dimension];
+
+            if (distance < 0) {
+                searchkdTree(left, closest, maxSize, occupied, photonIndex, dimensions, photons, photonSize, position, maxDistance);
+                if (pow(distance,2) < maxDistance) {
+                    searchkdTree(right, closest, maxSize, occupied, photonIndex, dimensions, photons, photonSize, position, maxDistance);
+                }
+            } else {
+                searchkdTree(right, closest, maxSize, occupied, photonIndex, dimensions, photons, photonSize, position, maxDistance);
+
+                if (pow(distance, 2) < maxDistance) {
+                    searchkdTree(left, closest, maxSize, occupied, photonIndex, dimensions, photons, photonSize, position, maxDistance);
+                }
+            }
+        }
+    }
+
+    if (photonIndex[index] != maxLong) {
+        float distance = pow(glm::distance(photons[photonIndex[index]].hitPos, position), 2);
+        if (distance < maxDistance) {
+            if (occupied == maxSize) {
+                if (distance < closest[0].distance) {
+
+                    WhichPhoton newPhoton = {
+                        .index = photonIndex[index],
+                        .distance = distance
+                    };
+
+                    closest[0] = newPhoton;
+                    
+                    build_maxheap(closest, occupied);
+
+                    maxDistance = closest[0].distance;   
+                }
+            } else {
+                occupied++;
+                WhichPhoton newPhoton = {
+                    .index = photonIndex[index],
+                    .distance = distance
+                };
+                closest[occupied - 1] = newPhoton;
+            }   
+        }
+    }
+}
 
 
-vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> kdTree, int *indices, int sizeOfindice){
+
+vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, int bounces, const vector<Photon> &kdTree, const vector<unsigned long> &photonIndex, const vector<int> &dimensions, const int photonSize){
     if (bounces > 2) return vec3(0,0,0);
     Intersection i;
     vec3 hitColor(0,0,0);
@@ -254,45 +309,138 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
         if (isMirror){
             vec4 reflectedDirection = specularReflection(normal, d);
-            hitColor += 0.8f * castRay(i.position, reflectedDirection, triangles, circles, bounces+1, kdTree, indices, sizeOfindice);
+            hitColor += 0.8f * castRay(i.position, reflectedDirection, triangles, circles, bounces+1, kdTree, photonIndex, dimensions, photonSize);
         } else {
-
             vec3 indirect;
             vec3 directLight = DirectLight(i, triangles, circles);
             vec3 acc (0,0,0);
-            int neighbours = 500;
-            int n = sizeof(indices)/ sizeof(indices[0]);
+            int index;
+            vector<Photon> copy = kdTree;
+            int neighbours = 1000;
+            int occupied = 0;
+            vector<WhichPhoton> closest;
+            closest.resize(neighbours);
 
-            quickSort(kdTree, 0, n-1, i.position, indices, sizeOfindice);
+            searchkdTree(0, closest, neighbours, occupied, photonIndex, dimensions, kdTree, photonSize, i.position, 0.5);   
 
-
-            for (int j = 0; j < neighbours; j++) {
-                float weight = (max(glm::dot((kdTree[indices[j]].incomingDirection), normal), 0.f));
-                acc += kdTree[j].color * weight;
+            for (int j = 0; j < occupied; j++) {
+                float weight = (max(glm::dot((kdTree[closest[j].index].incomingDirection), normal), 0.f));
+                acc += kdTree[closest[j].index].color * weight;
             }
-            float radius = abs(glm::distance(i.position, normalize(kdTree[indices[neighbours-1]].hitPos)));
+
+            float radius = abs(glm::distance(i.position, normalize(kdTree[index].hitPos)));
             float area = float(PI) * pow(radius, 2);
             acc /= area;
-            acc /= neighbours;
-            // if (acc.x == 0 && acc.y == 0 && acc.z ==0)std::cout<<glm::to_string(acc)<<std::endl;
-
-
+            acc /= occupied;
+            if (acc.x == 0 && acc.y == 0 && acc.z ==0)std::cout<<glm::to_string(acc)<<std::endl;
             
-            
-            // hitColor = (directLight + acc)  * objectColor;
-            hitColor = acc  * objectColor;
+            hitColor = acc;
         }
     } else {
         return vec3(0,0,0);
     }
-
     return hitColor;
+}
+
+void swap(Photon *a, Photon *b){
+    Photon *temp = a;
+    *a = *b;
+    *b = *temp;
+}
+
+int getMaximumDimension( vector<Photon>& photons){
+    float difference = minFloat;
+    int dim = -1;
+
+    for (int dimension = 0; dimension < 3; dimension++){
+        float max = minFloat; 
+        float min = maxFloat; 
+
+        for (uint i = 0; i < photons.size(); i++){
+            if (photons[i].hitPos[dimension] > max) max = photons[i].hitPos[dimension];
+            if (photons[i].hitPos[dimension] < min) min = photons[i].hitPos[dimension];
+        }
+        if (max - min > difference) {
+            difference = max-min;
+            dim = dimension;
+        }
+    }
+
+    return dim;
+}
+
+int partition(vector <Photon> &photons, int dim, int low, int high){
+    int pivot = photons[high].hitPos[dim];
+    int i = (low - 1);
+
+    for (int j = low; j <= high - 1; j++)
+    {
+        if (photons[j].hitPos[dim] <= pivot)
+        {
+            i++;
+            swap(&photons[i], &photons[j]);
+        }
+    }
+    swap(&photons[i+1], &photons[high]);
+    return (i + 1);
+}
+
+void quickSort(vector<Photon> &photons, int dim, int low, int high){
+    if (low < high) 
+    {
+        int pi = partition(photons, dim, low, high);
+        quickSort(photons, dim, low, pi-1);
+        quickSort(photons, dim, pi+1, high);
+    }
+}
+
+int calculateMedian(vector<Photon> photons, int& dim){
+    quickSort(photons, dim,  0, photons.size()-1);
+
+    return floor(photons.size()/2);
+}
+
+void createkdTree(const unsigned long index, vector<unsigned long>& photonIndex, vector<int>& dimensions, vector<Photon>& photons, const int photonSize, bool &isSuccessful){
+    if (photons.size() == 0) {
+        isSuccessful = false;
+        return;
+    }
+    if (photons.size() == 1) {
+        isSuccessful = true;
+        if (index < photonSize) {
+            photonIndex[index] = photons[0].originalIndex;
+            dimensions[index] = -1;
+        }
+        return;
+    }
+    int dim = getMaximumDimension(photons);
+
+    int median = calculateMedian(photons, dim);
+
+    photonIndex[index] = photons[median].originalIndex;
+    dimensions[index] = dim;
+
+    vector <Photon> left;
+    vector <Photon> right;
+
+    for (uint i = 0; i < photons.size(); i++){
+        if (i < median){
+            left.push_back(photons[i]);
+        }
+        if (i > median){
+            right.push_back(photons[i]);
+        }
+    }
+
+
+    createkdTree(2 * index + 1, photonIndex, dimensions, left, photonSize, isSuccessful);
+    createkdTree(2 * index + 2, photonIndex, dimensions, right, photonSize, isSuccessful);
+    return;
 }
 
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire){
     Intersection i;
     if (photon.color.x < 0.1 && photon.color.y < 0.1 && photon.color.z < 0.1) {
-        // printf("DEAD PHOTON\n");
         return;
     }
     if (ClosestIntersection(s, d, triangles, circles, i, n_fire)){
@@ -300,7 +448,6 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
         vec3 objectColor;
         Material objectMaterial;
         bool isCircle = false;
-        // if (i.isTriangle) return;
         if (i.isTriangle) {
             objectNormal = triangles[i.triangleIndex].normal;
             objectColor = triangles[i.triangleIndex].color;
@@ -308,13 +455,11 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
         }
         else {
             isCircle = true;
-            // printf("CIRCLE\n");
             objectNormal = i.circleNormal;
             objectColor = circles[i.circleIndex].color;
             objectMaterial = circles[i.circleIndex].material;
         }
 
-        // if (isCircle) std::cout<<glm::to_string(objectNormal)<<std::endl;
 
         // HERE IS WHERE THE DIFFERENT BOUNCES WILL HAPPEN ONLY STORE WHEN PHOTON HITS A DIFFUSE
         switch (bounceType(photon, objectMaterial))
@@ -336,9 +481,9 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                     photon.phi = (unsigned char)(phi+256);
                 else
                     photon.phi = (unsigned char)phi;
-                // printf("DIFFUSE\n");
                 photon.incomingDirection = normalize(d);
                 photon.hitPos = i.position;
+                photon.originalIndex = photons.size();
                 photons.push_back(photon);
                 
 
@@ -360,11 +505,9 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
                 scalePower(SPECULAR, photon, newPhoton, objectMaterial);
                 vec4 outDir = specularReflection(objectNormal, d);
                 firePhoton(i.position, outDir, photons, newPhoton, triangles, circles, n_fire + 1);
-                // printf("SPECULAR\n");
                 break;
             }
             case ABSORPTION:
-                // printf("ABSORPTION\n");
                 break;
             default:
                 break;
@@ -404,42 +547,6 @@ vec3 DirectLight(const Intersection& i, const vector<Triangle>& triangles, const
     
 }
 
-void swap(int* a, int* b){
-    int t = *a; 
-    *a = *b; 
-    *b = t;
-}
-
-int partition(const vector<Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice){
-    int pivot = indices[high];
-    int i = (low - 1);
-
-    for (int j = low; j <= high - 1; j++)
-    {
-        if ((glm::distance(photons[indices[j]].hitPos, pos)) <= glm::distance(photons[pivot].hitPos, pos))
-        {
-            i++;
-            swap(&indices[i], &indices[j]);
-        }
-    }
-
-    swap(&indices[i+1], &indices[high]);
-
-    return (i + 1);
-}
-
-void quickSort(const vector<Photon> &photons, int low, int high, const vec4 pos, int *indices, int sizeOfindice){
-    // printf("LOW: %d\n", low);
-    if (low < high) 
-    {
-        int pi = partition(photons, low, high, pos, indices, sizeOfindice);
-        quickSort(photons, low, pi-1, pos, indices, sizeOfindice);
-        quickSort(photons, pi+1, high, pos, indices, sizeOfindice);
-
-    }
-    
-}
-
 vec4 calculateLightDirection(){
     float x = distributionx(generator);
     float y = distributiony(generator);
@@ -454,7 +561,7 @@ vec4 calculateLightDirection(){
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles) {
-    int numberOfPhotons = 200000;
+    int numberOfPhotons = 300000;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;
@@ -555,11 +662,6 @@ bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, cons
       }
     }
   }
-
-//   vec4 offset = vec4(0.001f, 0.001f, 0.001f, 1.f) * closestIntersection.circleNormal;
-//   vec4 start_position = closestIntersection.position - offset;
-
-//   if (!circleIntersection(s, d, circles, closestIntersection)) return false;
   
     circleIntersection(s, d, circles, closestIntersection, index);
 
@@ -689,8 +791,8 @@ void Update()
   float dt = float(t2-t);
   t = t2;
   /*Good idea to remove this*/
-  std::cout << "Render time: " << dt << " ms." << std::endl;
-
+//   std::cout << "Render time: " << dt << " ms." << std::endl;
+  /* Update variables*/
   SDL_Event e;
   mat4 translation(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
 
