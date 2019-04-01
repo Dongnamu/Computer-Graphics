@@ -69,11 +69,13 @@ class Circle {
 		float radius;
 		glm::vec3 color;
 		bool isGlass;
+		bool isMirror;
 		Material material;
 		
-		Circle( glm::vec4 center, float radius, glm::vec3 color, bool isGlass, Material m = diffuse)
+		Circle( glm::vec4 center, float radius, glm::vec3 color, bool isGlass, bool isM,Material m = diffuse)
 			: center(center), radius(radius), color(color), isGlass(isGlass) {
 				material = m;
+				isMirror = isM;
 			}
 };
 
@@ -98,7 +100,7 @@ void LoadCircles( std::vector<Circle>& circles ) {
 	vec4 B(323,330,147,1);
 	vec4 C(465,330,467,1);
 
-	// circles.push_back(Circle(A, 60, white, true, diffuse));
+	circles.push_back(Circle(C, 60, white, false, false, diffuse));
 	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
 	// circles.push_back(Circle(C, 60, yellow, true, specular));
 
@@ -157,8 +159,8 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	triangles.push_back( Triangle( C, D, B, white ) );
 
 	// Left wall
-	triangles.push_back( Triangle( A, E, C, red) );
-	triangles.push_back( Triangle( C, E, G, red) );
+	triangles.push_back( Triangle( A, E, C, white) );
+	triangles.push_back( Triangle( C, E, G, white) );
 
 	// Right wall
 	triangles.push_back( Triangle( F, B, D, blue));
