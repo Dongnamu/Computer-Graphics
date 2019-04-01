@@ -30,6 +30,13 @@ Material specular = {
 	.diffuse = 0.0
 };
 
+Material glass = {
+	.specular = 0.0,
+	.refraction = 0.8,
+	.absorption = 0.2,
+	.diffuse = 0.0
+};
+
 
 class Triangle
 {
@@ -102,7 +109,7 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	// circles.push_back(Circle(C, 60, white, false, false, diffuse));
 	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
-	circles.push_back(Circle(C, 120, white, false, false, diffuse));
+	circles.push_back(Circle(C, 120, white, true, false, glass));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
@@ -163,8 +170,8 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	triangles.push_back( Triangle( C, E, G, red) );
 
 	// Right wall
-	triangles.push_back( Triangle( F, B, D, blue, true, specular));
-	triangles.push_back( Triangle( H, F, D, blue, true, specular) );
+	triangles.push_back( Triangle( F, B, D, blue ));
+	triangles.push_back( Triangle( H, F, D, blue) );
 
 	// Ceiling
 	triangles.push_back( Triangle( E, F, G, white) );
