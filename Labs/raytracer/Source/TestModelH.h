@@ -154,7 +154,7 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	vec4 G(L,L,L,1);
 	vec4 H(0,L,L,1);
 
-	// Floor:
+	//Floor:
 	triangles.push_back( Triangle( C, B, A, white) );
 	triangles.push_back( Triangle( C, D, B, white ) );
 
@@ -188,24 +188,24 @@ void LoadTestModel( std::vector<Triangle>& triangles )
 	H = vec4( 82,165,225,1);
 
 	// Front
-	triangles.push_back( Triangle(E,B,A,white) );
-	triangles.push_back( Triangle(E,F,B,white) );
+	// triangles.push_back( Triangle(E,B,A,white) );
+	// triangles.push_back( Triangle(E,F,B,white) );
 
-	// Front
-	triangles.push_back( Triangle(F,D,B,white) );
-	triangles.push_back( Triangle(F,H,D,white) );
+	// // Front
+	// triangles.push_back( Triangle(F,D,B,white) );
+	// triangles.push_back( Triangle(F,H,D,white) );
 
-	// BACK
-	triangles.push_back( Triangle(H,C,D,white) );
-	triangles.push_back( Triangle(H,G,C,white) );
+	// // BACK
+	// triangles.push_back( Triangle(H,C,D,white) );
+	// triangles.push_back( Triangle(H,G,C,white) );
 
-	// LEFT
-	triangles.push_back( Triangle(G,E,C,white) );
-	triangles.push_back( Triangle(E,A,C,white) );
+	// // LEFT
+	// triangles.push_back( Triangle(G,E,C,white) );
+	// triangles.push_back( Triangle(E,A,C,white) );
 
-	// TOP
-	triangles.push_back( Triangle(G,F,E,white) );
-	triangles.push_back( Triangle(G,H,F,white) );
+	// // TOP
+	// triangles.push_back( Triangle(G,F,E,white) );
+	// triangles.push_back( Triangle(G,H,F,white) );
 
 	// ---------------------------------------------------------------------------
 	// Tall block

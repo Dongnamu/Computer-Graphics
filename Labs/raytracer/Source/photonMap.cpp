@@ -70,8 +70,8 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 512
-#define SCREEN_HEIGHT 512
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 128
 #define FULLSCREEN_MODE true
 mat4 R;
 bool escape = false;
@@ -247,7 +247,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
             vec3 indirect;
             vec3 directLight = DirectLight(i, triangles, circles, isPhoton);
             vec3 acc (0,0,0);
-            const float radius = 2.f;
+            const float radius = 0.05f;
 
             vector<Photon> copy = kdTree;
             vector<int> indexes;
@@ -257,10 +257,10 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
 
             for (uint j = 0; j < indexes.size(); j++) {   
                 float weight = (max(glm::dot(kdTree[indexes[j]].incomingDirection, normal), 0.f));
-                acc += kdTree[indexes[j]].color * weight ;
+                acc += kdTree[indexes[j]].color  * weight;
             }
 
-            printf("PHOTONS FOUND: %d\n", indexes.size());
+            // printf("PHOTONS FOUND: %d\n", indexes.size());
 
             float area =   float(PI) * pow(radius, 2);
             acc /= area;
@@ -295,7 +295,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
         }
         else {
             isCircle = true;
-            // printf("CIRCLE\n");
+            printf("CIRCLE\n");
             objectNormal = i.circleNormal;
             objectColor = circles[i.circleIndex].color;
             objectMaterial = circles[i.circleIndex].material;
@@ -410,7 +410,7 @@ vec4 calculateLightDirection(){
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles, bool isPhoton) {
-    float numberOfPhotons = 200;
+    float numberOfPhotons = 10000;
 
     for (int i = 0; i < numberOfPhotons; i++){
         Photon photon;
@@ -541,9 +541,9 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
     vec3 L = vec3(L4);
     vec3 d3 = vec3(d);
 
-    float a = dot(d3, d3);
-    // if (isPhoton) a = 1;
-    // else a = dot(d3 ,d3);
+    float a;
+    if (isPhoton) a = 1;
+    else a = dot(d3 ,d3);
     float b = 2 * dot(d3, L);
     float c = dot(L, L) - pow(circles[i].radius, 2);
 
@@ -571,7 +571,7 @@ bool circleIntersection(vec4 s, vec4 d, const vector<Circle>& circles, Intersect
       closestIntersection.position = s + t0 * d;
       closestIntersection.isTriangle = false;
       closestIntersection.circleIndex = i;
-      closestIntersection.circleNormal = normalize((s + t0 * d) - circles[i].center);
+      closestIntersection.circleNormal = normalize(circles[i].center - (s + t0 * d));
     }
   }
 
