@@ -24,9 +24,9 @@ Material diffuse = {
 };
 
 Material specular = {
-	.specular = 0.8,
+	.specular = 1,
 	.refraction = 0.0,
-	.absorption = 0.2,
+	.absorption = 0,
 	.diffuse = 0.0
 };
 
@@ -46,10 +46,11 @@ public:
 	glm::vec4 v2;
 	glm::vec4 normal;
 	glm::vec3 color;
+	bool isGlass;
 	bool isMirror;
 	Material material;
 
-	Triangle( glm::vec4 v0, glm::vec4 v1, glm::vec4 v2, glm::vec3 color, bool isM = false, Material m = diffuse)
+	Triangle( glm::vec4 v0, glm::vec4 v1, glm::vec4 v2, glm::vec3 color,bool isGlass = false, bool isM = false, Material m = diffuse)
 		: v0(v0), v1(v1), v2(v2), color(color)
 	{
 		ComputeNormal();
@@ -104,12 +105,12 @@ void LoadCircles( std::vector<Circle>& circles ) {
 	float L = 555;
 
 	vec4 A(433,330,247,1);
-	vec4 B(323,330,147,1);
-	vec4 C(400, 140, 200,1);
+	vec4 B(380,100,250,1);
+	vec4 C(100,100,200,1);
 
 	// circles.push_back(Circle(C, 60, white, false, false, diffuse));
-	// circles.push_back(Circle(B, 20, cyan, true, diffuse));
-	circles.push_back(Circle(C, 120, white, true, false, glass));
+	circles.push_back(Circle(B, 80, cyan, false, true, specular));
+	circles.push_back(Circle(C, 80, white, true, false, glass));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
