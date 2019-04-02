@@ -319,7 +319,7 @@ void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const v
     //     // printf("DEAD PHOTON\n");
     //     return;
     // }
-    if (ClosestIntersection(s, d, triangles, circles, i, n_fire)){
+    if (ClosestIntersection(s, d, triangles, circles, i, -1)){
         vec4 objectNormal;
         vec3 objectColor;
         Material objectMaterial;
