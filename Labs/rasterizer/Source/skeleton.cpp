@@ -82,8 +82,8 @@ Current current = {
 };
 
 Camera camera = {
-  .position = vec4(0,0,0,1),
-  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,2,1)),  // .center = vec3(0.003724, 0.929729, 0.07459)
+  .position = vec4(0,0,-2,1),
+  .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),  // .center = vec3(0.003724, 0.929729, 0.07459)
   .center = vec3(0,0,0)
 };
 
@@ -211,16 +211,16 @@ mat4 getRotation() {
 void updateClippers() {
 
     // These are the directions towards the four corners of the img plane
-    vec4 leftUpCorner = normalize(getRotation() * -camera.basis[3] * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 leftUpCorner = normalize(getRotation() * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftUp = vec3(leftUpCorner);
    
-    vec4 leftBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 leftBotCorner = normalize(getRotation() * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 leftBot = vec3(leftBotCorner);
 
-    vec4 rightTopCorner = normalize(getRotation() * -camera.basis[3] * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 rightTopCorner = normalize(getRotation() * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightUp = vec3(rightTopCorner);
 
-    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length, 1));
+    vec4 rightBotCorner = normalize(getRotation() * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 4, 1));
     vec3 rightBot = vec3(rightBotCorner);
 
     // We use those directions to get the normal of the plane
@@ -436,7 +436,7 @@ void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary,
 }
 
 void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
-  vertex.position = camera.basis * v;
+  vertex.position = camera.basis * (v - camera.position);
   p.zinv = 1/vertex.position[2];
   p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
   p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
@@ -666,6 +666,7 @@ void Update()
   t = t2;
   /*Good idea to remove this*/
   std::cout << "Render time: " << dt << " ms." << std::endl;
+  camera.basis[3] = vec4(0,0,0,1);
   /* Update variables*/
   SDL_Event e;
 
@@ -678,25 +679,31 @@ void Update()
         break;
       case SDLK_UP:
         // Move camera forward
-        camera.basis[3][2] -= 0.1;
+        camera.basis[3][2] = 0.05;
+        camera.position = camera.basis * camera.position;
         break;
       case SDLK_DOWN:
       // Move camera backward
-        camera.basis[3][2] += 0.1;
+        camera.basis[3][2] = -0.05;
+        camera.position = camera.basis * camera.position;
         break;
       case SDLK_LEFT:
       // Move camera to the left
-        camera.basis[3][0] += 0.1;
+        camera.basis[3][0] = 0.05;
+        camera.position = camera.basis * camera.position;
         break;
       case SDLK_RIGHT:
       // Move camera to the right
-        camera.basis[3][0] -= 0.1;
+        camera.basis[3][0] = -0.05;
+        camera.position = camera.basis * camera.position;
         break;
       case SDLK_n:
-        camera.basis[3][1] += 0.1;
+        camera.basis[3][1] = 0.05;
+        camera.position = camera.basis * camera.position;
         break;
       case SDLK_m:
-        camera.basis[3][1] -= 0.1;
+        camera.basis[3][1] = -0.05;
+        camera.position = camera.basis * camera.position;
         break;
       case SDLK_d:
         // Rotate camera right;
