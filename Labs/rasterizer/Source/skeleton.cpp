@@ -38,6 +38,7 @@ const float epsilon = 0.1;
 struct Camera{
   vec4 position;
   mat4 basis;
+  mat4 planeBasis;
   vec3 center;
 };
 
@@ -84,6 +85,7 @@ Current current = {
 Camera camera = {
   .position = vec4(0,0,-2, 1.0),
   .basis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
+  .planeBasis = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1)),
   // .center = vec3(0.003724, 0.929729, 0.07459)
   .center = vec3(0,0,0)
 };
@@ -208,16 +210,16 @@ void updateClippers() {
 
     // These are the directions towards the four corners of the img plane
     
-    vec4 leftUpCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 leftUpCorner = normalize(camera.planeBasis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 leftUp = vec3(leftUpCorner);
    
-    vec4 leftBotCorner = normalize(camera.basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 leftBotCorner = normalize(camera.planeBasis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 leftBot = vec3(leftBotCorner);
 
-    vec4 rightTopCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 rightTopCorner = normalize(camera.planeBasis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 rightUp = vec3(rightTopCorner);
 
-    vec4 rightBotCorner = normalize(camera.basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 rightBotCorner = normalize(camera.planeBasis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 rightBot = vec3(rightBotCorner);
 
     // We use those directions to get the normal of the plane
@@ -232,6 +234,9 @@ void updateClippers() {
     vec4 rightN = vec4(rightNormal.x, rightNormal.y, rightNormal.z, 1);
     vec4 topN = vec4(topNormal.x, topNormal.y, topNormal.z, 1);
     vec4 botN = vec4(botNormal.x, botNormal.y, botNormal.z, 1);
+    // vec4 temp = leftN;
+    // leftN = vec4(-rightN.x, rightN.y, rightN.z, 1);
+    // rightN = vec4(-temp.x, temp.y, temp.z, 1);
 
     // We use the directions from the top to find points in the near plane and then find the normal of this plane
     vec4 leftTopPoint = camera.position + (leftUpCorner * depth);
@@ -705,31 +710,37 @@ void Update()
       case SDLK_d:
         // Rotate camera right;
         camera.basis = translation * generateRotation(vec3(0, yaw, 0)) * camera.basis;
+        camera.planeBasis = translation * generateRotation(vec3(0, -yaw, 0)) * camera.planeBasis;
         if (is_lookAt) camera.position = translation * generateRotation(vec3(0, yaw, 0)) * camera.position;
         break;
       case SDLK_a:
         // Rotate camera left;
         camera.basis = translation * generateRotation(vec3(0, -yaw, 0)) * camera.basis;
+        camera.planeBasis = translation * generateRotation(vec3(0, yaw, 0)) * camera.planeBasis;
         if (is_lookAt) camera.position = translation * generateRotation(vec3(0, -yaw, 0)) * camera.position;
 
         break;
       case SDLK_w:
         // Rotate camera top;
         camera.basis = translation * generateRotation(vec3(yaw, 0, 0)) * camera.basis;
+        camera.planeBasis = translation * generateRotation(vec3(-yaw, 0, 0)) * camera.planeBasis;
         if (is_lookAt) camera.position = translation * generateRotation(vec3(yaw, 0, 0)) * camera.position;
 
         break;
       case SDLK_s:
         // Rotate camera down;
         camera.basis = translation * generateRotation(vec3(-yaw, 0, 0)) * camera.basis;
+        camera.planeBasis = translation * generateRotation(vec3(yaw, 0, 0)) * camera.planeBasis;
         if (is_lookAt) camera.position = translation * generateRotation(vec3(-yaw, 0, 0)) * camera.position;
         break;
       case SDLK_q:
         camera.basis = translation * generateRotation(vec3(0, 0, -yaw)) * camera.basis;
+        camera.planeBasis = translation * generateRotation(vec3(0, 0, yaw)) * camera.planeBasis;
         if (is_lookAt) camera.position = translation * generateRotation(vec3(0, 0, -yaw)) * camera.position;
         break;
       case SDLK_e:
         camera.basis = translation * generateRotation(vec3(0, 0, yaw)) * camera.basis;
+        camera.planeBasis = translation * generateRotation(vec3(0, 0, -yaw)) * camera.planeBasis;
         if (is_lookAt) camera.position = translation * generateRotation(vec3(0, 0, yaw)) * camera.position;
         break;
       case SDLK_l:
