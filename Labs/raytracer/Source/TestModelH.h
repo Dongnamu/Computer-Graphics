@@ -106,11 +106,11 @@ void LoadCircles( std::vector<Circle>& circles ) {
 
 	vec4 A(433,330,247,1);
 	vec4 B(380,100,250,1);
-	vec4 C(100,100,200,1);
+	vec4 C(380,250,200,1);
 
 	// circles.push_back(Circle(C, 60, white, false, false, diffuse));
 	circles.push_back(Circle(B, 80, cyan, false, true, specular));
-	circles.push_back(Circle(C, 80, white, true, false, glass));
+	circles.push_back(Circle(C, 50, white, true, false, glass));
 
 	for( uint i=0; i<circles.size(); ++i )
 	{
