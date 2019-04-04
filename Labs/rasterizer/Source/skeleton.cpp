@@ -18,8 +18,8 @@ using glm::mat4;
 using glm::ivec2;
 
 
-#define SCREEN_WIDTH 500
-#define SCREEN_HEIGHT 500
+#define SCREEN_WIDTH 1000
+#define SCREEN_HEIGHT 1000
 #define FULLSCREEN_MODE false
 #define PI 3.14159
 
@@ -27,8 +27,14 @@ float maxFloat = std::numeric_limits<float>::max();
 
 float yaw = 2 * PI / 180;
 
-float focal_length = SCREEN_HEIGHT / 2;
+const float bias = 0.0085f;
 
+const int antiFactor = 4;
+
+const int antiWidth = SCREEN_WIDTH * antiFactor;
+const int antiHeight= SCREEN_HEIGHT * antiFactor;
+
+float focal_length = antiWidth / 2;
 
 float depth = 0.55;
 
@@ -114,9 +120,9 @@ Clipper clipper = {
 
 const mat4 identity = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
 
-float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
-float lightDepthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
-float drawnBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
+float depthBuffer[antiHeight][antiWidth];
+float lightDepthBuffer[antiHeight][antiWidth];
+vec3 pixelValue[antiHeight][antiWidth];
 
 
 // vec4 cameraPos(0, 0, -2, 1.0);
@@ -130,14 +136,15 @@ vec4 preLightPos = light.position;
 /* FUNCTIONS                                                                   */
 
 void Update();
-void Draw(screen* screen, const vector<Triangle>& triangles);
+void Render(const vector<Triangle>& triangles);
+void Draw(screen* screen);
 void VertexShader(const vec4& v, Pixel& p, Vertex& vertex, const mat4 basis, const vec4 position, const float focal_length);
 // void DrawLineSDL(screen* surface, ivec2 a, ivec2 b, vec3 color);
 // void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices);
 void ComputePolygonRows(const vector<Pixel>& vertextPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
-void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
-void DrawPolygon( screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex);
-void PixelShader( screen* screen, const Pixel& p);
+void DrawRows(const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels);
+void DrawPolygon( const vector<vec4>& vertices, vector<Vertex>& vertex);
+void PixelShader( const Pixel& p);
 mat4 generateRotation(vec3 a);
 void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedTriangles, vec4 normal, vec4 point);
 void calSign(vec4 trianglePoint, float& value, vec4 normal, vec4 point);
@@ -186,13 +193,44 @@ int main( int argc, char* argv[] )
       ClipTriangles(leftTriangles, rightTriangles, clipper.rightNormal, clipper.rightPoint);
       ClipTriangles(rightTriangles, topTriangles, clipper.topNormal, clipper.topPoint);
       ClipTriangles(topTriangles, bottomTriangles, clipper.botNormal, clipper.botPoint);
-      Draw(screen, bottomTriangles);
+      Render(bottomTriangles);
+      Draw(screen);
       SDL_Renderframe(screen);
     }
 
   SDL_SaveImage( screen, "screenshot.bmp" );
   KillSDL(screen);
   return 0;
+}
+
+void Draw(screen* screen) {
+
+  memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
+
+  
+  for (int x = 0; x < SCREEN_WIDTH; x++) {
+    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+
+        vec3 value = vec3(0,0,0);
+        float addNumber = 0.f;
+
+        int currentX = x * antiFactor;
+        int currentY = y * antiFactor;
+        int nextX = (x + 1) * antiFactor;
+        int nextY = (y + 1) * antiFactor;
+
+        for (int w = currentX; w < nextX; w++) {
+          for (int v = currentY; v < nextY; v++) {
+            value += pixelValue[v][w];
+            addNumber += 1;
+          }
+        }
+
+        value = value / addNumber;
+
+        PutPixelSDL(screen, x, y, value);
+    }
+  }
 }
 
 void fillLightBuffer(const vector<Triangle> triangles, const mat4 lightBasis, const mat4 clipBasis, const vec4 position) {
@@ -218,8 +256,8 @@ void lightClip(const vector<Triangle> triangles, vector<Triangle>& finalTriangle
 
 
 void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, const vec4 position) {
-  for (int y = 0; y < SCREEN_HEIGHT; y++) {
-    for (int x = 0; x < SCREEN_WIDTH; x++) {
+  for (int y = 0; y < antiHeight; y++) {
+    for (int x = 0; x < antiWidth; x++) {
       lightDepthBuffer[y][x] = 0.0f;
     }
   }
@@ -260,8 +298,8 @@ void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixel
     Interpolate(depth_left, depth_right, drawRow);
     int k = 0;
     for (int j = left; j < right; j++) {
-      if (j >= 0 && j < SCREEN_WIDTH) {
-        if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
+      if (j >= 0 && j < antiWidth) {
+        if (leftPixels[i].y >= 0 && leftPixels[i].y < antiHeight) {
           lightShader(drawRow[k]);
         }
       }
@@ -282,15 +320,13 @@ void lightShader(const Pixel &p) {
 }
 
 /*Place your drawing here*/
-void Draw(screen* screen, const vector<Triangle>& triangles)
+void Render(const vector<Triangle>& triangles)
 {
-  /* Clear buffer */
-  memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-
-  for (int y = 0; y < SCREEN_HEIGHT; y++) {
-    for (int x = 0; x < SCREEN_WIDTH; x++) {
+  
+  for (int y = 0; y < antiHeight; y++) {
+    for (int x = 0; x < antiWidth; x++) {
       depthBuffer[y][x] = 0.0f;
-      drawnBuffer[y][x] = 0.0f;
+      pixelValue[y][x] = vec3(0,0,0);
     }
   }
 
@@ -306,7 +342,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
     current.currentReflectance = triangles[i].color;
     // current.currentReflectance = vec3(1,1,1);
 
-    DrawPolygon(screen, vertices, vertex);
+    DrawPolygon(vertices, vertex);
     // DrawPolygonEdges(screen, vertices);
 
   }
@@ -316,16 +352,16 @@ void updateClippers(const mat4 basis, const vec4 position) {
 
     // These are the directions towards the four corners of the img plane
     
-    vec4 leftUpCorner = normalize(basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 leftUpCorner = normalize(basis * vec4(-antiWidth/2, -antiHeight/2, focal_length / 2, 1));
     vec3 leftUp = vec3(leftUpCorner);
    
-    vec4 leftBotCorner = normalize(basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 leftBotCorner = normalize(basis * vec4(-antiWidth/2, antiHeight/2, focal_length / 2, 1));
     vec3 leftBot = vec3(leftBotCorner);
 
-    vec4 rightTopCorner = normalize(basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 rightTopCorner = normalize(basis * vec4(antiWidth/2, -antiHeight/2, focal_length / 2, 1));
     vec3 rightUp = vec3(rightTopCorner);
 
-    vec4 rightBotCorner = normalize(basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 rightBotCorner = normalize(basis * vec4(antiWidth/2, antiHeight/2, focal_length / 2, 1));
     vec3 rightBot = vec3(rightBotCorner);
 
     // We use those directions to get the normal of the plane
@@ -421,7 +457,7 @@ void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedT
     organiseData(v2, v2S, in, boundary, out);
     
     // printf("%d %d %d\n", numSigns[0], numSigns[1], numSigns[2]);
-    std::cout<<glm::to_string(in[0])<<std::endl;
+    // std::cout<<glm::to_string(in[0])<<std::endl;
     
     if (numSigns[0] == 1) {
       vec4 inside = in[0];
@@ -546,8 +582,8 @@ void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary,
 void VertexShader(const vec4& v, Pixel& p, Vertex& vertex, const mat4 basis, const vec4 position, const float focal_length){
   vertex.position = basis * (v - position);
   p.zinv = 1/vertex.position[2];
-  p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
-  p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
+  p.x = focal_length*(vertex.position[0]/vertex.position[2]) + antiWidth/2;
+  p.y = focal_length*(vertex.position[1]/vertex.position[2]) + antiHeight/2;
   p.pos3d = v;
 }
 
@@ -700,7 +736,7 @@ mat4 generateRotation(vec3 a){
   return (mat4(uno, dos, tres, cuatro));
 }
 
-void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels) {
+void DrawRows(const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels) {
 
   for (uint i = 0; i < leftPixels.size(); i++) {
     int left = leftPixels[i].x;
@@ -716,9 +752,9 @@ void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixe
     Interpolate(depth_left, depth_right, drawRow);
     int k = 0;
     for (int j = left; j < right; j++) {
-      if (j >= 0 && j < SCREEN_WIDTH) {
-        if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
-          PixelShader(screen, drawRow[k]);
+      if (j >= 0 && j < antiWidth) {
+        if (leftPixels[i].y >= 0 && leftPixels[i].y < antiHeight) {
+          PixelShader(drawRow[k]);
         }
       }
       k++;
@@ -726,7 +762,7 @@ void DrawRows(screen* screen, const vector<Pixel>& leftPixels, const vector<Pixe
   }
 }
 
-void PixelShader(screen* screen, const Pixel& p) {
+void PixelShader(const Pixel& p) {
 
   int x = p.x;
   int y = p.y;
@@ -747,21 +783,22 @@ void PixelShader(screen* screen, const Pixel& p) {
       
       vec4 fromLight = (generateRotation(light.direction) * identity) * (p.pos3d - light.position);
 
-      float zinv = 1/fromLight[2] + 0.022f;
-      int v = focal_length / 2 * (fromLight[0] / fromLight[2]) + SCREEN_WIDTH/2;
-      int w = focal_length / 2 * (fromLight[1] / fromLight[2]) + SCREEN_HEIGHT/2;
+      float zinv = 1/fromLight[2] + bias;
+      int v = focal_length / 2 * (fromLight[0] / fromLight[2]) + antiWidth/2;
+      int w = focal_length / 2 * (fromLight[1] / fromLight[2]) + antiHeight/2;
       
-      if (v < 0 || v > SCREEN_WIDTH) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
-      else if (w < 0 || w > SCREEN_HEIGHT) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
-      else if (lightDepthBuffer[w][v] - 0.022f > zinv) illumination = light.indirectLight;
+      if (v < 0 || v > antiWidth) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      else if (w < 0 || w > antiHeight) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      else if (lightDepthBuffer[w][v] - bias > zinv) illumination = light.indirectLight;
       else illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
 
-      PutPixelSDL(screen, x, y, current.currentReflectance * illumination);
+      pixelValue[y][x] = current.currentReflectance * illumination;
+
     }
   }
 }
 
-void DrawPolygon(screen* screen, const vector<vec4>& vertices, vector<Vertex>& vertex) {
+void DrawPolygon(const vector<vec4>& vertices, vector<Vertex>& vertex) {
   int V = vertices.size();
 
   vector<Pixel> vertexPixels(V);
@@ -773,7 +810,7 @@ void DrawPolygon(screen* screen, const vector<vec4>& vertices, vector<Vertex>& v
   vector<Pixel> leftPixels;
   vector<Pixel> rightPixels;
   ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
-  DrawRows(screen, leftPixels, rightPixels);
+  DrawRows(leftPixels, rightPixels);
 }
 
 
