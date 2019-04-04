@@ -20,7 +20,7 @@ using glm::ivec2;
 
 #define SCREEN_WIDTH 500
 #define SCREEN_HEIGHT 500
-#define FULLSCREEN_MODE true
+#define FULLSCREEN_MODE false
 #define PI 3.14159
 
 float maxFloat = std::numeric_limits<float>::max();
@@ -57,6 +57,7 @@ struct Light {
   vec4 position;
   vec3 color;
   vec3 indirectLight;
+  vec3 direction;
 };
 
 struct Current {
@@ -91,9 +92,10 @@ Camera camera = {
 };
 
 Light light = {
-  .position = vec4(0, -0.5, -0.7, 1.0),
+  .position = vec4(0, -0.5, -0.9, 1.0),
   .color = 14.0f * vec3(1, 1, 1),
-  .indirectLight = 0.5f * vec3(1, 1, 1)
+  .indirectLight = 0.5f * vec3(1, 1, 1),
+  .direction = vec3((90 * PI) / 180, 0, 0)
 };
 
 Clipper clipper = {
@@ -110,14 +112,18 @@ Clipper clipper = {
 };
 
 
+const mat4 identity = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0,0,1));
 
 float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
-
+float lightDepthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
+float drawnBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 
 // vec4 cameraPos(0, 0, -2, 1.0);
 bool escape = false;
 bool is_lookAt = false;
+
+vec4 preLightPos = light.position;
 
 
 /* ----------------------------------------------------------------------------*/
@@ -125,7 +131,7 @@ bool is_lookAt = false;
 
 void Update();
 void Draw(screen* screen, const vector<Triangle>& triangles);
-void VertexShader(const vec4& v, Pixel& p, Vertex& vertex);
+void VertexShader(const vec4& v, Pixel& p, Vertex& vertex, const mat4 basis, const vec4 position, const float focal_length);
 // void DrawLineSDL(screen* surface, ivec2 a, ivec2 b, vec3 color);
 // void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices);
 void ComputePolygonRows(const vector<Pixel>& vertextPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
@@ -139,8 +145,13 @@ void countSign(float v0, float v1, float v2, vector<int>& numSigns);
 bool isBoundary(vector<int> numSigns);
 bool isNegative(vector<int> numSigns);
 void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary, vector<vec4>& out);
-void updateClippers();
-
+void updateClippers(const mat4 basis, const vec4 position);
+void fillLightBuffer(const vector<Triangle> triangles, const mat4 lightBasis, const mat4 clipBasis, const vec4 position);
+void lightClip(const vector<Triangle> triangles, vector<Triangle>& finalTriangles);
+void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, const vec4 position);
+void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixels);
+void lightShader(const Pixel &p);
+void Interpolate(Pixel a, Pixel b, vector<Pixel>& result);
 
 int main( int argc, char* argv[] )
 {
@@ -151,8 +162,11 @@ int main( int argc, char* argv[] )
 
   int size = triangles.size();
 
-  // camera.position = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), light.position) * camera.position;
-  // camera.basis =  generateRotation(vec3((90 * PI / 180), 0, 0)) * camera.basis;
+  mat4 lightBasis = generateRotation(light.direction) * identity;
+  mat4 clipBasis = generateRotation(-light.direction) * identity;
+
+  fillLightBuffer(triangles, lightBasis, clipBasis, light.position);
+
   while( !escape )
     {
       vector<Triangle> nearTriangles;
@@ -161,7 +175,12 @@ int main( int argc, char* argv[] )
       vector<Triangle> topTriangles;
       vector<Triangle> bottomTriangles;
       Update();
-      updateClippers();
+      if (preLightPos != light.position) {
+        preLightPos = light.position;
+        fillLightBuffer(triangles, lightBasis, clipBasis, light.position);
+      }
+
+      updateClippers(camera.planeBasis, camera.position);
       ClipTriangles(triangles, nearTriangles, clipper.nearNormal, clipper.nearPoint);
       ClipTriangles(nearTriangles, leftTriangles, clipper.leftNormal, clipper.leftPoint);
       ClipTriangles(leftTriangles, rightTriangles, clipper.rightNormal, clipper.rightPoint);
@@ -176,6 +195,92 @@ int main( int argc, char* argv[] )
   return 0;
 }
 
+void fillLightBuffer(const vector<Triangle> triangles, const mat4 lightBasis, const mat4 clipBasis, const vec4 position) {
+  vector<Triangle> finalTriangles;
+  updateClippers(clipBasis, position);
+  lightClip(triangles, finalTriangles);
+  renderFromLight(finalTriangles, lightBasis, position);
+}
+
+void lightClip(const vector<Triangle> triangles, vector<Triangle>& finalTriangles) {
+  vector<Triangle> nearTriangles;
+  vector<Triangle> leftTriangles;
+  vector<Triangle> rightTriangles;
+  vector<Triangle> topTriangles;
+
+  ClipTriangles(triangles, nearTriangles, clipper.nearNormal, clipper.nearPoint);
+  ClipTriangles(nearTriangles, leftTriangles, clipper.leftNormal, clipper.leftPoint);
+  ClipTriangles(leftTriangles, rightTriangles, clipper.rightNormal, clipper.rightPoint);
+  ClipTriangles(rightTriangles, topTriangles, clipper.topNormal, clipper.topPoint);
+  ClipTriangles(topTriangles, finalTriangles, clipper.botNormal, clipper.botPoint);
+
+}
+
+
+void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, const vec4 position) {
+  for (int y = 0; y < SCREEN_HEIGHT; y++) {
+    for (int x = 0; x < SCREEN_WIDTH; x++) {
+      lightDepthBuffer[y][x] = 0.0f;
+    }
+  }
+
+  for (uint32_t i=0; i<triangles.size(); ++i){
+    vector<vec4> vertices(3);
+    vector<Vertex> vertex(3);
+
+    vertices[0] = triangles[i].v0;
+    vertices[1] = triangles[i].v1;
+    vertices[2] = triangles[i].v2;
+
+    vector<Pixel> vertexPixels(3);
+
+    for (int i = 0; i < 3; i++) {
+      VertexShader(vertices[i], vertexPixels[i], vertex[i], lightBasis, position, focal_length / 2);
+    }
+
+    vector<Pixel> leftPixels;
+    vector<Pixel> rightPixels;
+    ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
+    updateBuffer(leftPixels, rightPixels);
+  }
+}
+
+void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixels) {
+  
+  for (uint i = 0; i < leftPixels.size(); i++) {
+    int left = leftPixels[i].x;
+    int right = rightPixels[i].x;
+
+    Pixel depth_left = leftPixels[i];
+    Pixel depth_right = rightPixels[i];
+
+    int distance = abs(right - left) + 1;
+    vector<Pixel> drawRow(distance);
+
+    Interpolate(depth_left, depth_right, drawRow);
+    int k = 0;
+    for (int j = left; j < right; j++) {
+      if (j >= 0 && j < SCREEN_WIDTH) {
+        if (leftPixels[i].y >= 0 && leftPixels[i].y < SCREEN_HEIGHT) {
+          lightShader(drawRow[k]);
+        }
+      }
+      k++;
+    }
+  }
+}
+
+void lightShader(const Pixel &p) {
+  int x = p.x;
+  int y = p.y;
+
+  if (p.zinv >= 0) {
+    if (lightDepthBuffer[y][x] < p.zinv) {
+      lightDepthBuffer[y][x] = p.zinv;
+    }
+  }
+}
+
 /*Place your drawing here*/
 void Draw(screen* screen, const vector<Triangle>& triangles)
 {
@@ -185,6 +290,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
   for (int y = 0; y < SCREEN_HEIGHT; y++) {
     for (int x = 0; x < SCREEN_WIDTH; x++) {
       depthBuffer[y][x] = 0.0f;
+      drawnBuffer[y][x] = 0.0f;
     }
   }
 
@@ -198,7 +304,7 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
 
     current.currentNormal = triangles[i].normal;
     current.currentReflectance = triangles[i].color;
-
+    // current.currentReflectance = vec3(1,1,1);
 
     DrawPolygon(screen, vertices, vertex);
     // DrawPolygonEdges(screen, vertices);
@@ -206,20 +312,20 @@ void Draw(screen* screen, const vector<Triangle>& triangles)
   }
 }
 
-void updateClippers() {
+void updateClippers(const mat4 basis, const vec4 position) {
 
     // These are the directions towards the four corners of the img plane
     
-    vec4 leftUpCorner = normalize(camera.planeBasis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 leftUpCorner = normalize(basis * vec4(-SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 leftUp = vec3(leftUpCorner);
    
-    vec4 leftBotCorner = normalize(camera.planeBasis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 leftBotCorner = normalize(basis * vec4(-SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 leftBot = vec3(leftBotCorner);
 
-    vec4 rightTopCorner = normalize(camera.planeBasis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 rightTopCorner = normalize(basis * vec4(SCREEN_WIDTH/2, -SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 rightUp = vec3(rightTopCorner);
 
-    vec4 rightBotCorner = normalize(camera.planeBasis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
+    vec4 rightBotCorner = normalize(basis * vec4(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, focal_length / 2, 1));
     vec3 rightBot = vec3(rightBotCorner);
 
     // We use those directions to get the normal of the plane
@@ -239,10 +345,10 @@ void updateClippers() {
     // rightN = vec4(-temp.x, temp.y, temp.z, 1);
 
     // We use the directions from the top to find points in the near plane and then find the normal of this plane
-    vec4 leftTopPoint = camera.position + (leftUpCorner * depth);
-    vec4 leftBottomPoint = camera.position + (leftBotCorner * depth);
-    vec4 rightBottomPoint = camera.position + (rightBotCorner * depth);
-    vec4 rightTopPoint = camera.position + (rightTopCorner * depth);
+    vec4 leftTopPoint = position + (leftUpCorner * depth);
+    vec4 leftBottomPoint = position + (leftBotCorner * depth);
+    vec4 rightBottomPoint = position + (rightBotCorner * depth);
+    vec4 rightTopPoint = position + (rightTopCorner * depth);
     vec4 leftToRight = rightBottomPoint - leftBottomPoint;
     vec4 leftToTop = leftTopPoint - leftBottomPoint;
     vec4 topTotop = rightTopPoint - leftTopPoint;
@@ -276,7 +382,7 @@ void ClipTriangles(const vector<Triangle>& triangles, vector<Triangle>& clippedT
     float v1S;
     float v2S;
     calSign(v0, v0S, normal, point);
-    calSign(v1, v1S, normal, point);
+    calSign(v1, v1S, normal, point); 
     calSign(v2, v2S, normal, point);
     
     // Count how many vertices are positive, zero and negative
@@ -437,8 +543,8 @@ void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary,
   if (v < 0) out.push_back(point); 
 }
 
-void VertexShader(const vec4& v, Pixel& p, Vertex& vertex){
-  vertex.position = camera.basis *(v - camera.position);
+void VertexShader(const vec4& v, Pixel& p, Vertex& vertex, const mat4 basis, const vec4 position, const float focal_length){
+  vertex.position = basis * (v - position);
   p.zinv = 1/vertex.position[2];
   p.x = focal_length*(vertex.position[0]/vertex.position[2]) + SCREEN_WIDTH/2;
   p.y = focal_length*(vertex.position[1]/vertex.position[2]) + SCREEN_HEIGHT/2;
@@ -637,7 +743,19 @@ void PixelShader(screen* screen, const Pixel& p) {
 
       float r_n  = dot(direction, normal);
 
-      vec3 illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      vec3 illumination;
+      
+      vec4 fromLight = (generateRotation(light.direction) * identity) * (p.pos3d - light.position);
+
+      float zinv = 1/fromLight[2] + 0.022f;
+      int v = focal_length / 2 * (fromLight[0] / fromLight[2]) + SCREEN_WIDTH/2;
+      int w = focal_length / 2 * (fromLight[1] / fromLight[2]) + SCREEN_HEIGHT/2;
+      
+      if (v < 0 || v > SCREEN_WIDTH) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      else if (w < 0 || w > SCREEN_HEIGHT) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      else if (lightDepthBuffer[w][v] - 0.022f > zinv) illumination = light.indirectLight;
+      else illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+
       PutPixelSDL(screen, x, y, current.currentReflectance * illumination);
     }
   }
@@ -649,7 +767,7 @@ void DrawPolygon(screen* screen, const vector<vec4>& vertices, vector<Vertex>& v
   vector<Pixel> vertexPixels(V);
 
   for (int i = 0; i < V; i++) {
-    VertexShader(vertices[i], vertexPixels[i], vertex[i]);
+    VertexShader(vertices[i], vertexPixels[i], vertex[i], camera.basis, camera.position, focal_length);
   }
 
   vector<Pixel> leftPixels;
@@ -748,12 +866,12 @@ void Update()
         else is_lookAt = true;
         break;
       case SDLK_u:
-        // light.position += vec4(0, 0, 0.1, 0);
-        depth += 0.1;
+        light.position += vec4(0, 0, 0.1, 0);
+        // depth += 0.1;
         break;
       case SDLK_j:
-        // light.position += vec4(0,0,-0.1,0);
-        depth -= 0.1;
+        light.position += vec4(0,0,-0.1,0);
+        // depth -= 0.1;
         break;
       case SDLK_h:
         light.position += vec4(-0.1, 0, 0, 0);
