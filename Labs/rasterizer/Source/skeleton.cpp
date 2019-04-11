@@ -29,7 +29,7 @@ float yaw = 2 * PI / 180;
 
 const float bias = 0.0085f;
 
-const int antiFactor = 4;
+const int antiFactor = 2;
 
 const int antiWidth = SCREEN_WIDTH * antiFactor;
 const int antiHeight= SCREEN_HEIGHT * antiFactor;
@@ -98,9 +98,9 @@ Camera camera = {
 };
 
 Light light = {
-  .position = vec4(0, -0.5, -0.9, 1.0),
+  .position = vec4(0, -0.9, -0.9, 1.0),
   .color = 14.0f * vec3(1, 1, 1),
-  .indirectLight = 0.5f * vec3(1, 1, 1),
+  .indirectLight = 0.7f * vec3(1, 1, 1),
   .direction = vec3((90 * PI) / 180, 0, 0)
 };
 
@@ -122,6 +122,7 @@ const mat4 identity = mat4(vec4(1,0,0,0), vec4(0,1,0,0), vec4(0,0,1,0), vec4(0,0
 
 float depthBuffer[antiHeight][antiWidth];
 float lightDepthBuffer[antiHeight][antiWidth];
+float lightDepthUpBuffer[antiHeight][antiWidth];
 vec3 pixelValue[antiHeight][antiWidth];
 
 
@@ -153,11 +154,11 @@ bool isBoundary(vector<int> numSigns);
 bool isNegative(vector<int> numSigns);
 void organiseData(vec4 point, float v, vector<vec4>& in, vector<vec4>& boundary, vector<vec4>& out);
 void updateClippers(const mat4 basis, const vec4 position);
-void fillLightBuffer(const vector<Triangle> triangles, const mat4 lightBasis, const mat4 clipBasis, const vec4 position);
+void fillLightBuffer(const vector<Triangle> triangles, const mat4 lightBasis, const mat4 clipBasis, const vec4 position, bool isUp = false);
 void lightClip(const vector<Triangle> triangles, vector<Triangle>& finalTriangles);
-void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, const vec4 position);
-void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixels);
-void lightShader(const Pixel &p);
+void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, const vec4 position, bool isUp = false);
+void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixels, bool isUp = false);
+void lightShader(const Pixel &p, bool isUp = false);
 void Interpolate(Pixel a, Pixel b, vector<Pixel>& result);
 
 int main( int argc, char* argv[] )
@@ -173,6 +174,7 @@ int main( int argc, char* argv[] )
   mat4 clipBasis = generateRotation(-light.direction) * identity;
 
   fillLightBuffer(triangles, lightBasis, clipBasis, light.position);
+  fillLightBuffer(triangles, clipBasis, lightBasis, light.position, true);
 
   while( !escape )
     {
@@ -185,6 +187,7 @@ int main( int argc, char* argv[] )
       if (preLightPos != light.position) {
         preLightPos = light.position;
         fillLightBuffer(triangles, lightBasis, clipBasis, light.position);
+        fillLightBuffer(triangles, clipBasis, lightBasis, light.position, true);
       }
 
       updateClippers(camera.planeBasis, camera.position);
@@ -233,11 +236,11 @@ void Draw(screen* screen) {
   }
 }
 
-void fillLightBuffer(const vector<Triangle> triangles, const mat4 lightBasis, const mat4 clipBasis, const vec4 position) {
+void fillLightBuffer(const vector<Triangle> triangles, const mat4 lightBasis, const mat4 clipBasis, const vec4 position, bool isUp) {
   vector<Triangle> finalTriangles;
   updateClippers(clipBasis, position);
   lightClip(triangles, finalTriangles);
-  renderFromLight(finalTriangles, lightBasis, position);
+  renderFromLight(finalTriangles, lightBasis, position, isUp);
 }
 
 void lightClip(const vector<Triangle> triangles, vector<Triangle>& finalTriangles) {
@@ -255,10 +258,11 @@ void lightClip(const vector<Triangle> triangles, vector<Triangle>& finalTriangle
 }
 
 
-void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, const vec4 position) {
+void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, const vec4 position, bool isUp) {
   for (int y = 0; y < antiHeight; y++) {
     for (int x = 0; x < antiWidth; x++) {
-      lightDepthBuffer[y][x] = 0.0f;
+      if (!isUp) lightDepthBuffer[y][x] = 0.0f;
+      else lightDepthUpBuffer[y][x] = 0.0f;
     }
   }
 
@@ -279,11 +283,11 @@ void renderFromLight(const vector<Triangle>& triangles, const mat4 lightBasis, c
     vector<Pixel> leftPixels;
     vector<Pixel> rightPixels;
     ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
-    updateBuffer(leftPixels, rightPixels);
+    updateBuffer(leftPixels, rightPixels, isUp);
   }
 }
 
-void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixels) {
+void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixels, bool isUp) {
   
   for (uint i = 0; i < leftPixels.size(); i++) {
     int left = leftPixels[i].x;
@@ -300,7 +304,7 @@ void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixel
     for (int j = left; j < right; j++) {
       if (j >= 0 && j < antiWidth) {
         if (leftPixels[i].y >= 0 && leftPixels[i].y < antiHeight) {
-          lightShader(drawRow[k]);
+          lightShader(drawRow[k], isUp);
         }
       }
       k++;
@@ -308,13 +312,19 @@ void updateBuffer(const vector<Pixel> leftPixels, const vector<Pixel> rightPixel
   }
 }
 
-void lightShader(const Pixel &p) {
+void lightShader(const Pixel &p, bool isUp) {
   int x = p.x;
   int y = p.y;
 
   if (p.zinv >= 0) {
-    if (lightDepthBuffer[y][x] < p.zinv) {
-      lightDepthBuffer[y][x] = p.zinv;
+    if (!isUp) {
+      if (lightDepthBuffer[y][x] < p.zinv) {
+        lightDepthBuffer[y][x] = p.zinv;
+      }
+    } else {
+      if (lightDepthUpBuffer[y][x] < p.zinv) {
+        lightDepthUpBuffer[y][x] = p.zinv;
+      }
     }
   }
 }
@@ -789,8 +799,10 @@ void PixelShader(const Pixel& p) {
       
       if (v < 0 || v > antiWidth) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
       else if (w < 0 || w > antiHeight) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
-      else if (lightDepthBuffer[w][v] - bias > zinv) illumination = light.indirectLight;
-      else illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      else if (lightDepthBuffer[w][v] - bias < zinv || lightDepthUpBuffer[w][v] - bias > zinv) illumination = ((light.color * max((r_n), 0.f))/area) + light.indirectLight;
+      else if (lightDepthBuffer[w][v] - bias > zinv || lightDepthUpBuffer[w][v] - bias < zinv) illumination = light.indirectLight;
+      // else if () illumination = light.indirectLight;
+      else illumination = light.indirectLight;
 
       pixelValue[y][x] = current.currentReflectance * illumination;
 
@@ -915,6 +927,12 @@ void Update()
         break;
       case SDLK_k:
         light.position += vec4(0.1, 0, 0, 0);
+        break;
+      case SDLK_y:
+        light.position += vec4(0,0.1,0,0);
+        break;
+      case SDLK_i:
+        light.position += vec4(0,-0.1,0,0);
         break;
       default:
         break;
