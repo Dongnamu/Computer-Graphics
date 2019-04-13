@@ -29,7 +29,7 @@ float yaw = 2 * PI / 180;
 
 const float bias = 0.0085f;
 
-const int antiFactor = 2;
+const int antiFactor = 3;
 
 const int antiWidth = SCREEN_WIDTH * antiFactor;
 const int antiHeight= SCREEN_HEIGHT * antiFactor;
