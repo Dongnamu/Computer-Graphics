@@ -70,8 +70,8 @@ const int DIFFUSE = 2;
 const int TRANSMISSION = 3;
 
 #define PI 3.14159
-#define SCREEN_WIDTH 512
-#define SCREEN_HEIGHT 512
+#define SCREEN_WIDTH 256
+#define SCREEN_HEIGHT 256
 #define FULLSCREEN_MODE true
 mat4 R;
 bool escape = false;
@@ -104,8 +104,9 @@ std::uniform_real_distribution<float> distribution(0 , 1);
 
 
 
-float aperture = 0.00170f;
-float focalDistance = 2.000820f;
+
+float aperture = 0.0006570;
+float focalDistance = 0.000820f;
 
 void firePhoton(vec4 s, vec4 d, vector<Photon>& photons, Photon& photon, const vector<Triangle>& triangles, const vector<Circle>& circles, int n_fire);
 bool ClosestIntersection(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Circle>& circles, Intersection& closestIntersection, int index);
@@ -175,7 +176,6 @@ int main(){
       std::cout<<glm::to_string(camera.basis[3])<<std::endl;    
       Update();
       Draw(screen, triangles, full, circles, indices);
-
       SDL_Renderframe(screen);
       Update();
     //   break;
@@ -338,7 +338,7 @@ vec3 castRay(vec4 s, vec4 d, const vector<Triangle>& triangles, const vector<Cir
             vec3 indirect;
             vec3 directLight = DirectLight(i, triangles, circles);
             vec3 acc (0,0,0);
-            const float radius = 0.2f;
+            const float radius = 0.1f;
 
             vector<Photon> copy = kdTree;
             vector<int> indexes;
@@ -570,8 +570,8 @@ vec4 calculateCausticsDirection(const vector<Circle>& circles) {
 }
 
 void startPhotons(vector<Photon>& photons, const vector<Triangle>& triangles, const vector<Circle>& circles, bool Caustics) {
-    float numberOfPhotons = 500;
-    if (Caustics) numberOfPhotons = 200;
+    float numberOfPhotons = 20000;
+    if (Caustics) numberOfPhotons = 5000;
 
 
     for (int i = 0; i < numberOfPhotons; i++){
