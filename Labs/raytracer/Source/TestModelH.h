@@ -24,15 +24,15 @@ Material diffuse = {
 };
 
 Material specular = {
-	.specular = 1,
+	.specular = 0.8,
 	.refraction = 0.0,
 	.absorption = 0,
-	.diffuse = 0.0
+	.diffuse = 0.2
 };
 
 Material glass = {
-	.specular = 0.0,
-	.refraction = 1,
+	.specular = 0.5,
+	.refraction = 0.5,
 	.absorption = 0.0,
 	.diffuse = 0.0
 };
